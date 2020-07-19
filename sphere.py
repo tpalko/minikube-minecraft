@@ -1,12 +1,21 @@
 import os
+import sys
 import math
 import json
 from mcpi.minecraft import Minecraft 
 from mcpi import block
 import random 
 
-radius = 30
-origin = (40.0, 30.0, 40.0,)
+SERVER = sys.argv[1]
+mc = Minecraft.create(SERVER)
+
+player_pos = mc.player.getTilePos()
+
+print("Planting @ %s" % player_pos)
+
+radius = 40
+origin = (player_pos.x, 20, player_pos.z)
+#origin = (20, player_pos.z, player_pos.x)
 blocks = [block.DIRT, block.WOOD, block.OBSIDIAN, block.IRON_BLOCK, block.SNOW_BLOCK, block.STONE_BRICK, block.STONE, block.MOSS_STONE, block.DIAMOND_BLOCK, block.GLASS, block.GRASS]
 
 def angles(degrees, radius):
@@ -52,7 +61,7 @@ else:
 with open('surface.json', 'r') as f:
   surface = json.loads(f.read())
 
-mc = Minecraft.create()
+
 
 for ring in surface:
   print("Ring ({} points)".format(len(ring['ring'])))
@@ -121,7 +130,7 @@ for eighth in eighths:
 with open("surfaces.json", "w") as f:
   f.write(json.dumps(surfaces, indent=4))
 
-mc = Minecraft.create()
+mc = Minecraft.create(SERVER)
 
 for eighth in surfaces:
   print("Drawing {}..".format(eighth))
