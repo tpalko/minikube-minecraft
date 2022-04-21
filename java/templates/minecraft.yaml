@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: PersistentVolume 
+metadata:
+  name: minecraft-java-backups-pv
+spec:
+  capacity: 
+    storage: 10Gi
+  volumeMode: Filesystem 
+  accessModes: 
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete 
+  storageClassName: standard 
+  local:
+    path: ${VOLUME_BASE}/backups
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname 
+          operator: In 
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolume 
+metadata:
+  name: minecraft-java-world-pv
+spec:
+  capacity: 
+    storage: 10Gi
+  volumeMode: Filesystem 
+  accessModes: 
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete 
+  storageClassName: standard 
+  local:
+    path: ${VOLUME_BASE}/world
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname 
+          operator: In 
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolumeClaim 
+metadata:
+  name: minecraft-java-backups
+spec:
+  volumeName: minecraft-java-backups-pv
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  
+---
+apiVersion: v1
+kind: PersistentVolumeClaim 
+metadata:
+  name: minecraft-java-world
+spec:
+  volumeName: minecraft-java-world-pv
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${IMAGE}
+spec:
+  selector:
+    matchLabels:
+      app: ${IMAGE}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: ${IMAGE}
+    spec:
+      volumes:
+      - name: backups 
+        persistentVolumeClaim:
+          claimName: minecraft-java-backups
+      - name: world 
+        persistentVolumeClaim:
+          claimName: minecraft-java-world 
+      containers:
+      - name: ${IMAGE}
+        image: ${IMAGE}:${VERSION}
+        imagePullPolicy: Never        
+        envFrom:
+        - configMapRef:
+            name: ${IMAGE}
+        volumeMounts:
+        - mountPath: /opt/minecraft/backups
+          name: backups 
+        - mountPath: "${WORLD_BASE}/${WORLD_NAME}"
+          name: world 
+        ports:
+        - containerPort: 25565
+          name: default 
+        - containerPort: 25575
+          name: mcrcon
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${IMAGE}-service
+  # labels:
+  #   kubernetes.io/minikube-addons-endpoint: ingress
+spec:
+  type: NodePort
+  ports:
+    - name: default
+      port: 25565
+      targetPort: default
+    - name: mcrcon
+      port: 25575
+      targetPort: mcrcon
+  selector:
+    app: ${IMAGE}

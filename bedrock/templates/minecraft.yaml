@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: PersistentVolume 
+metadata:
+  name: minecraft-bedrock-backups-pv
+spec:
+  capacity: 
+    storage: 10Gi
+  volumeMode: Filesystem 
+  accessModes: 
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete 
+  storageClassName: standard 
+  local:
+    path: ${VOLUME_BASE}/backups
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname 
+          operator: In 
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolume 
+metadata:
+  name: minecraft-bedrock-world-pv
+spec:
+  capacity: 
+    storage: 10Gi
+  volumeMode: Filesystem 
+  accessModes: 
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete 
+  storageClassName: standard 
+  local:
+    path: ${VOLUME_BASE}/world
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname 
+          operator: In 
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolumeClaim 
+metadata:
+  name: minecraft-bedrock-backups
+spec:
+  volumeName: minecraft-bedrock-backups-pv
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  
+---
+apiVersion: v1
+kind: PersistentVolumeClaim 
+metadata:
+  name: minecraft-bedrock-world
+spec:
+  volumeName: minecraft-bedrock-world-pv
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${IMAGE}
+spec:
+  selector:
+    matchLabels:
+      app: ${IMAGE}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: ${IMAGE}
+    spec:
+      volumes:
+      - name: backups 
+        persistentVolumeClaim:
+          claimName: minecraft-bedrock-backups
+      - name: world 
+        persistentVolumeClaim:
+          claimName: minecraft-bedrock-world 
+      containers:
+      - name: ${IMAGE}
+        image: ${IMAGE}:${VERSION}
+        imagePullPolicy: Never        
+        envFrom:
+        - configMapRef:
+            name: ${IMAGE}
+        volumeMounts:
+        - mountPath: /opt/minecraft/backups
+          name: backups 
+        - mountPath: "${WORLD_BASE}/${WORLD_NAME}"
+          name: world 
+        ports:
+        - containerPort: 19132
+          name: default 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${IMAGE}-service-udp
+  # labels:
+  #   kubernetes.io/minikube-addons-endpoint: ingress
+spec:
+  type: NodePort
+  ports:
+    - name: default
+      port: 19132
+      targetPort: default
+      protocol: UDP
+  selector:
+    app: ${IMAGE}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${IMAGE}-service-tcp
+  # labels:
+  #   kubernetes.io/minikube-addons-endpoint: ingress
+spec:
+  type: NodePort
+  ports:
+    - name: default
+      port: 19132
+      targetPort: default
+      protocol: TCP
+  selector:
+    app: ${IMAGE}
