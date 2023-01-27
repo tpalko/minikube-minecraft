@@ -1,5 +1,44 @@
 # Quick Start
 
+Don't care about the details?
+
+```
+minikube-minecraft $ minikube start 
+```
+
+When `minikube status` shows `running`:
+
+```
+minikube-minecraft $ ./install.sh 
+minikube-minecraft $ cd java 
+minikube-minecraft/java $ ./build 
+minikube-minecraft/java $ ./deploy up
+```
+
+### Connecting multiplayer 
+
+The following are all valid methods for connecting to the server:
+
+* minikube tunnel + kubectl get service, look for desired NodePort service: Cluster IP + 25565
+* docker inspect POD container: POD IP + 25565
+* minikube service --all: associated URL for 25565 target port 
+* proxy: localhost + incremented port 
+
+If you need to expose your minecraft server anywhere off the host, even on the same 
+network, the proxy server needs to be running:
+
+```
+minikube-minecraft/java $ cd ../proxy 
+minikube-minecraft/proxy $ ./run.sh start 
+```
+
+_and_ the following requirements must be met:
+
+* your host and/or router firewall are configured to allow TCP <incremented port> to your host machine 
+* any port forwarding on the router is set up for port <incremented port> -> host machine 
+
+Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
+
 ## 3/29/22 
 
 ### The Networking 
@@ -49,19 +88,95 @@ can come and go as it pleases without interference.
 
 See [the proxy readme](proxy/README.md) for further instructions.
 
-### The Storage 
+### Storage and Backups
 
 Now that our containers are all up and chatty, how do we assure that everything 
-can burn to the ground and we'll always be able to take shelter from the zombies 
-in our inspired architecture andesite-and-wood treehouse masterpiece laid thick 
-with full chests wily traps*? Well, assuming you have one of those, fear not.
+can burn to the ground and come right back? 
 
-_* - treehouse not included in this repository_
+Well, it's something. Let's get to it. 
 
-Let's get to it. 
+This project targets minikube, and so that's the kind of detail we're going to cover. 
+This platform choice has triggered several interesting hurdles, juggling backups
+not the least of them. (see Networking). 
 
-Local `PersistentVolumes` will carve out of the minikube container's ephemeral 
-storage, which will persist between minikube restarts. So the minecraft server 
+`PersistentVolumes` will carve out of the minikube container's ephemeral 
+storage and we, in fact, target a `minecraft` folder directly in `/home/docker` for 
+all PVs:
+
+```
+/home/docker/minecraft/
+  java\
+    volumes-<version>\
+      backups\  <-- java <version> backups PV
+      world\    <-- java <version> world PV
+  bedrock\
+    volumes-<version>\
+      backups\  <-- bedrock <version backups PV
+      world\    <-- bedrock <version> world PV
+```
+
+Mounting these volumes into our server container:
+
+```
+/opt/minecraft/
+  backups/
+  server/
+    worlds/<world name>/  <-- bedrock
+    <world name>/         <-- java 
+```
+
+we run two cronjobs:
+
+* within the server container to create a backup in the backups folder 
+* on the host to `docker cp` all backups from the version-appropriate minikube container folder listed above onto host storage
+
+Backups are filed by version and further by "level name" or "world name" (depending on what part of the system you're looking at).
+
+This is all well and good for a first run, but let's tackle some problems out of the gate:
+
+* on minikube restarts, PVs will continue to exist, but since the minikube container ephemeral storage resets, PV storage contents get wiped
+* because PV storage contents wipe between cluster restarts but the configured world name remains the same, we now have a new base state for that world (in name only) and that name now refers to multiple worlds
+
+Therefore, some special handling needs to be done when minikube restarts and also when we want to switch worlds. To even be able to respond properly,
+backups need to be stored methodically and we need some sane defaults for handling unexpected circumstances.
+
+
+* `deploy` can be provided with a world name, or not in which case the previously set world name will be found
+* world data can exist (or not) for the provided or found world name
+* backups can exist (or not) for the provided or found world name 
+
+
+
+What happens next is more important. When the server starts, if the world data folder is empty, a new world is generated. Because both java and bedrock editions use world-named subfolders and not generic "world" folders, for a long-running server the world data folder in question may well be populated. But if minikube has been restarted and the world PV is based on ephemeral storage, the server may generate a new world when it shouldn't. Before the server is deployed and started, therefore, we need to know if the world in question has backups and then to load in the latest backup if so. 
+
+1. check world data folder 
+
+
+If minikube restarts for any reason, when it comes back up we will have a new, empty world named for whatever world was loaded in last. Backups will automatically start running, and the very first backup will be incorrect - it will be named for some world that might have hours of play on it but the backup contents will be 5-10 minutes into a brand new world. We want to at least give this world and its backups a distinct and correct name. 
+
+For when the server is deployed intentionally we can inject a world from a backup ahead of time. If the server is already running, we can take a final backup and shut it down first. The first `deploy` should include the world name, but without is tantamount to the server coming up after a minikube restart. We can assume that if world data is present on the volume it corresponds to the world name in the environment, and so subsequent `deploy` commands, up or down, default to the pre-existing world.
+
+
+_Detect a server starting without a world loaded and intercept the world name in the environment (coming from the Configmap). Call it "New World <timestamp>". Use this generated name for the backup file, but don't bother changing the Configmap value because another minikube restart will wipe it out anyway._
+
+States:
+* server deployed 
+* server torn down
+
+Scenarios:
+* server starts with no world data
+* a world is loaded by name when the server is already running 
+* a world is loaded by name when the server is stopped
+* the server is 
+
+`deploy` and `load` also may be affected in how they interact with `.env`. 
+
+`deploy up` will create PV/PVC if they don't exist and never drop them, even with `deploy down`.
+`load` will wrap placement of world data (from a backup) and changing of the world name in `.env` with a `deploy down && deploy up`.
+
+
+
+, which will persist between minikube restarts. So the minecraft server 
 come and go, trash it all you want. With your volume claims in place, gameplay is 
 real-time living on a normal docker container on your host machine, not an 
 abstraction of an abstraction of a disk somewhere in kubernetes. We can get to it 
@@ -236,6 +351,7 @@ docker run --rm -it minecraft-client:latest /bin/bash
 # References
 
 https://linuxize.com/post/how-to-install-minecraft-server-on-debian-9/
+https://www.minecraft.net/en-us/download/server
 
 # Appendix: Gotchas
 
@@ -522,3 +638,119 @@ minecraft           LoadBalancer   10.101.75.129   10.101.75.129   25565:30126/T
 # -- this route allows minecraft client to reach the server at 172.17.0.6:25565 
 route add -net 172.17.0.6 netmask 255.255.255.255 gw 192.168.49.2 dev br-8d38ed736202
 route del -net 172.17.0.6 netmask 255.255.255.255 gw 192.168.49.2 dev br-8d38ed736202
+
+# Appendix: Mods
+
+Forge must be installed on the client per launcher configuration. Really, for any one version,
+there should only be one install with and without Forge, and unless there are old world
+versions, it doesn't make sense to have any non-latest-version non-Forge versions, and it
+doesn't make sense to have Forge on any versions you don't have mods for. So the setup will 
+be one latest non-Forge (clean) version, and one Forge install for each older version for which 
+you have mods.
+
+To install mods, typically a .jar file will be placed inside `.minecraft/mods`. Often, mods
+will have dependencies, also as .jar files in the same folder. Mods are only loaded when 
+a Forge version is being run, otherwise these files are ignored. 
+
+While Forge is installed per launcher install version, and mods are built per-version,
+everything goes into the one mods folder and when a launcher configuration is started,
+everything is attempted to be loaded, and what will fail will fail. So the contents of the 
+mods folder must be adjusted per client version that's being used at the time. 
+
+So a typical workflow is thus:
+
+* create a new installation (launcher configuration) with the version desired
+* download Forge for that version
+* run the Forge .jar (java -jar ...jar) and install for client 
+* download mods desired for the version
+* put mods .jar files into `.minecraft/mods`
+* start minecraft launcher, select the Forge-enabled installation
+* Play 
+
+For 1.16.5 with Morph and Rats, `~/.minecraft/mods` looks like:
+
+```
+./rats-7.2.0-1.16.5.jar
+./Morph-1.16.5-10.1.1.jar
+./citadel-1.7.0-1.16.5.jar
+./iChunUtil-1.16.5-10.5.2.jar
+```
+
+# Appendix: mcrcon help
+
+```
+/advancement (grant|revoke)
+/attribute <target> <attribute> (base|get|modifier)
+/ban <targets> [<reason>]
+/ban-ip <target> [<reason>]
+/banlist [ips|players]
+/bossbar (add|get|list|remove|set)
+/clear [<targets>]
+/clone <begin> <end> <destination> [filtered|masked|replace]
+/data (get|merge|modify|remove)
+/datapack (disable|enable|list)
+/debug (report|start|stop)
+/defaultgamemode (adventure|creative|spectator|survival)
+/deop <targets>
+/difficulty [easy|hard|normal|peaceful]
+/effect (clear|give)
+/enchant <targets> <enchantment> [<level>]
+/execute (align|anchored|as|at|facing|if|in|positioned|rotated|run|store|unless)
+/experience (add|query|set)
+/fill <from> <to> <block> [destroy|hollow|keep|outline|replace]
+/forceload (add|query|remove)
+/function <name>
+/gamemode (adventure|creative|spectator|survival)
+/gamerule (announceAdvancements|commandBlockOutput|disableElytraMovementCheck|disableRaids|doDaylightCycle|doEntityDrops|doFireTick|doImmediateRespawn|doInsomnia|doLimitedCrafting|doMobLoot|doMobSpawning|doPatrolSpawning|doTileDrops|doTraderSpawning|doWeatherCycle|drowningDamage|fallDamage|fireDamage|forgiveDeadPlayers|keepInventory|logAdminCommands|maxCommandChainLength|maxEntityCramming|mobGriefing|naturalRegeneration|randomTickSpeed|reducedDebugInfo|sendCommandFeedback|showDeathMessages|spawnRadius|spectatorsGenerateChunks|universalAnger)
+/give <targets> <item> [<count>]
+/help [<command>]
+/kick <targets> [<reason>]
+/kill [<targets>]
+/list [uuids]
+/locate (bastion_remnant|buried_treasure|desert_pyramid|endcity|fortress|igloo|jungle_pyramid|mansion|mineshaft|monument|nether_fossil|ocean_ruin|pillager_outpost|ruined_portal|shipwreck|stronghold|swamp_hut|village)
+/locatebiome <biome>
+/loot (give|insert|replace|spawn)
+/me <action>
+/msg <targets> <message>
+/op <targets>
+/pardon <targets>
+/pardon-ip <target>
+/particle <name> [<pos>]
+/playsound <sound> (ambient|block|hostile|master|music|neutral|player|record|voice|weather)
+/recipe (give|take)
+/reload
+/replaceitem (block|entity)
+/save-all [flush]
+/save-off
+/save-on
+/say <message>
+/schedule (clear|function)
+/scoreboard (objectives|players)
+/seed
+/setblock <pos> <block> [destroy|keep|replace]
+/setidletimeout <minutes>
+/setworldspawn [<pos>]
+/spawnpoint [<targets>]
+/spectate [<target>]
+/spreadplayers <center> <spreadDistance> <maxRange> (under|<respectTeams>)
+/stop
+/stopsound <targets> [*|ambient|block|hostile|master|music|neutral|player|record|voice|weather]
+/summon <entity> [<pos>]
+/tag <targets> (add|list|remove)
+/team (add|empty|join|leave|list|modify|remove)
+/teammsg <message>
+/teleport (<destination>|<location>|<targets>)
+/tell -> msg
+/tellraw <targets> <message>
+/time (add|query|set)
+/title <targets> (actionbar|clear|reset|subtitle|times|title)
+/tm -> teammsg
+/tp -> teleport
+/trigger <objective> [add|set]
+/w -> msg
+/weather (clear|rain|thunder)
+/whitelist (add|list|off|on|reload|remove)
+/worldborder (add|center|damage|get|set|warning)
+/xp -> experience
+```
+

@@ -1,0 +1,19 @@
+#########################################
+#
+#	MiNECRAFT JAVA ${VERSION}
+#
+#
+load_module /usr/lib/nginx/modules/ngx_stream_module.so;
+worker_processes 1;
+user nginx;
+events { worker_connections 1024; }
+stream {
+	server {
+		listen ${LISTEN_QUERY_PORT};
+		proxy_pass	${HOST}:${MINECRAFT_PROXY_JAVA_QUERY_PORT};	
+	}
+	server {
+		listen ${LISTEN_RCON_PORT};
+		proxy_pass	${HOST}:${MINECRAFT_PROXY_JAVA_RCON_PORT};
+ 	}
+}

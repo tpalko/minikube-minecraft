@@ -22,14 +22,68 @@ INTERACTIVE=${INTERACTIVE:=0}
 . ../scripts/minikube-env.sh 
 # source java 
 . ../java/.env 
-MINECRAFT_PROXY_JAVA_UPSTREAM_HOST=$(docker inspect $(docker ps --filter="name=POD_${IMAGE}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
+
+if [[ -n "${VERSIONS}" ]]; then 
+  IFS=: read -ra VERSIONARRAY <<< ${VERSIONS}
+else
+  VERSIONARRAY=(${VERSION})
+fi 
+
+echo "Standing up proxy for ${#VERSIONARRAY[@]} Java versions: ${VERSIONARRAY[@]}"
+
+JAVA_HOSTS=()
+JAVA_VERSIONHOSTPAIRS=()
+
+for VERSION in ${VERSIONARRAY[@]}; do 
+  
+  IFS==	read -ra PARTS <<< ${VERSION}
+  VERSION=${PARTS[0]}
+  HASH=${PARTS[1]}
+  
+  export VERSION 
+  export VERSION_HYPHEN=${VERSION//./-}
+  
+  HOST_CONTAINER_FILTER="POD_${IMAGE}-${VERSION}"
+
+  echo "Looking for ${HOST_CONTAINER_FILTER} pod.."
+  
+  NEW_HOST=$(docker inspect $(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
+  
+  if [[ -z "${NEW_HOST}" ]]; then 
+    echo "No IP address found for ${HOST_CONTAINER_FILTER}. Skipping ${VERSION}."
+    continue 
+  fi 
+
+  VERSION_HOST_ARRAY=(${VERSION})
+
+  if [[ ${#VERSION_HOST_ARRAY[@]} -gt 1 ]]; then 
+    echo "Multiple IP addresses found for ${HOST_CONTAINER_FILTER} (${VERSION_HOST_ARRAY[@]}). Skipping ${VERSION}."
+    continue 
+  fi 
+
+  echo "Found ${NEW_HOST} for ${VERSION}"
+  JAVA_HOSTS+=(${NEW_HOST})
+  JAVA_VERSIONHOSTPAIRS+=(${VERSION}=${NEW_HOST})
+  # MINECRAFT_PROXY_JAVA_UPSTREAM_HOST=$(docker inspect $(docker ps --filter="name=POD_${IMAGE}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
+done 
+
+
 # source bedrock 
 . ../bedrock/.env 
-MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST=$(docker inspect $(docker ps --filter="name=POD_${IMAGE}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
+
+echo "Looking for ${IMAGE} pod.."
+MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST=$(docker inspect $(docker ps --filter="name=POD_${IMAGE}" -q) 2>/dev/null | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
+
 # clear minikube env 
 . ../scripts/minikube-env-deactivate.sh 
 
-echo "Found MINECRAFT_PROXY_JAVA_UPSTREAM_HOST=${MINECRAFT_PROXY_JAVA_UPSTREAM_HOST}"
+
+if [[ ${#JAVA_HOSTS[@]} -eq 0 && -z "${MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST}" ]]; then 
+  echo "Neither Java nor Bedrock appears to have any hosts."
+  exit 1
+fi 
+
+echo "Found Java hosts: ${JAVA_HOSTS[@]}"
 echo "Found MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST=${MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST}"
 
 . .env 
@@ -60,12 +114,12 @@ function clear_routes() {
 }
 
 function add_route() {
-  for HOST in $MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST $MINECRAFT_PROXY_JAVA_UPSTREAM_HOST; do 
+  for HOST in $MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST ${JAVA_HOSTS[@]}; do 
     NEW_ROUTE="route add -net ${HOST} gw ${MINIKUBE_IP} netmask 255.255.255.255 dev ${MINIKUBE_INTERFACE}"
     echo "Adding route:"
     echo "${NEW_ROUTE}"
     confirm 
-    sudo ${NEW_ROUTE} || ([[ $? -eq 127 ]] && echo "mayhaps not privileged?" || echo "Maybe the route is already in place.." )
+    sudo ${NEW_ROUTE} || ([[ $? -eq 127 ]] && echo "mayhaps not privileged?" || echo "mayhaps the route is already in place.." )
   done 
 }
 
@@ -96,7 +150,10 @@ function run_container() {
     echo "Removing dead container.."
     docker rm ${NAME}
   fi 
-  DOCKER_RUN_CMD="docker run -d --env-file .env -e MINECRAFT_PROXY_JAVA_UPSTREAM_HOST=${MINECRAFT_PROXY_JAVA_UPSTREAM_HOST} -e MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST=${MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST} ${NAMEPARAM} ${NETWORKPARAM} minecraft-proxy:latest"
+  
+  JAVA_HOST_STRING="$(echo ${JAVA_VERSIONHOSTPAIRS[@]})"
+  # JAVA_HOST_STRING="$(echo ${JAVA_HOSTS[@]})"
+  DOCKER_RUN_CMD="docker run -d --env-file .env -e JAVA_VERSIONHOSTPAIRS=${JAVA_HOST_STRING// /:} -e MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST=${MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST} ${NAMEPARAM} ${NETWORKPARAM} minecraft-proxy:latest"
   echo "--------------------------------------------------"
   echo "-- Starting new comtainer.. $(date)"
   echo "${DOCKER_RUN_CMD}"

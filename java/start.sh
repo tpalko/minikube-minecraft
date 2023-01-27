@@ -20,9 +20,10 @@ cat server.properties \
   | sed "s/^level-name=.*$/level-name=${WORLD_NAME}/" \
   | sed "s/^server-ip=.*$/server-ip=0.0.0.0/" \
   | sed "s/^show-coordinates=.*$/show-coordinates=${SHOW_COORDINATES}/" \
+  | sed "s/^enforce-secure-profile=.*$/enforce-secure-profile=${ENFORCE_SECURE_PROFILE}/" \
     > server.properties
 
-ENTRIES=(allow-cheats=${ALLOW_CHEATS} activate-cheats=${ACTIVATE_CHEATS} keep-inventory=${KEEP_INVENTORY} show-coordinates=${SHOW_COORDINATES} level-name=${WORLD_NAME})
+ENTRIES=(enforce-secure-profile=${ENFORCE_SECURE_PROFILE} allow-cheats=${ALLOW_CHEATS} activate-cheats=${ACTIVATE_CHEATS} keep-inventory=${KEEP_INVENTORY} show-coordinates=${SHOW_COORDINATES} level-name=${WORLD_NAME})
 
 for ENTRY in ${ENTRIES[@]}; do 
   IFS==; read -ra PARTS <<< "${ENTRY}"
@@ -52,5 +53,11 @@ echo "^ ^ ^ ^ ^ ^ ^ ^"
 
 (sleep 60 && rcon "op ${USERNAME}") &
 
+echo "Where is log4j2_112-116.xml?"
+find . -name "log4j2_112-116.xml"
+
 echo "Starting server.."
-java -Djavax.net.ssl.trustStorePassword=changeit -Xmx1024M -Xms1024M -jar server.jar
+# JAVA_CMD="java -cp \"./*:./patch/*\" ${JAVA_CONF} -Djavax.net.ssl.trustStorePassword=changeit -Xmx1024M -Xms1024M -jar server.jar"
+java -cp \"./*:./patch/*\" ${JAVA_CONF} -Djavax.net.ssl.trustStorePassword=changeit -Xmx1024M -Xms1024M -jar server.jar
+# echo ${JAVA_CMD}
+# ${JAVA_CMD}

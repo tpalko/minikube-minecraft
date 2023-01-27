@@ -1,0 +1,10 @@
+load_module /usr/lib/nginx/modules/ngx_stream_module.so;
+worker_processes 1;
+user nginx;
+events { worker_connections 1024; }
+stream {
+	server {
+		listen ${MINECRAFT_PROXY_BEDROCK_PORT};
+		proxy_pass	${MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST}:${MINECRAFT_PROXY_BEDROCK_PORT};
+	} 
+}

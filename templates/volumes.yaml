@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: PersistentVolume 
+metadata:
+  name: minecraft-${TYPE}-backups-pv-${VERSION}
+spec:
+  capacity: 
+    storage: 10Gi
+  volumeMode: Filesystem 
+  accessModes: 
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete 
+  storageClassName: standard 
+  local:
+    path: ${VOLUME_BASE}-${VERSION}/backups
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname 
+          operator: In 
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolume 
+metadata:
+  name: minecraft-${TYPE}-world-pv-${VERSION}
+spec:
+  capacity: 
+    storage: 10Gi
+  volumeMode: Filesystem 
+  accessModes: 
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete 
+  storageClassName: standard 
+  local:
+    path: ${VOLUME_BASE}-${VERSION}/world
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname 
+          operator: In 
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolumeClaim 
+metadata:
+  name: minecraft-${TYPE}-backups-${VERSION}
+spec:
+  volumeName: minecraft-${TYPE}-backups-pv-${VERSION}
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  
+---
+apiVersion: v1
+kind: PersistentVolumeClaim 
+metadata:
+  name: minecraft-${TYPE}-world-${VERSION}
+spec:
+  volumeName: minecraft-${TYPE}-world-pv-${VERSION}
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---

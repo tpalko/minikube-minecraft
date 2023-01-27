@@ -1,101 +1,31 @@
-apiVersion: v1
-kind: PersistentVolume 
-metadata:
-  name: minecraft-java-backups-pv
-spec:
-  capacity: 
-    storage: 10Gi
-  volumeMode: Filesystem 
-  accessModes: 
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Delete 
-  storageClassName: standard 
-  local:
-    path: ${VOLUME_BASE}/backups
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname 
-          operator: In 
-          values:
-          - minikube
----
-apiVersion: v1
-kind: PersistentVolume 
-metadata:
-  name: minecraft-java-world-pv
-spec:
-  capacity: 
-    storage: 10Gi
-  volumeMode: Filesystem 
-  accessModes: 
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Delete 
-  storageClassName: standard 
-  local:
-    path: ${VOLUME_BASE}/world
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/hostname 
-          operator: In 
-          values:
-          - minikube
----
-apiVersion: v1
-kind: PersistentVolumeClaim 
-metadata:
-  name: minecraft-java-backups
-spec:
-  volumeName: minecraft-java-backups-pv
-  accessModes: 
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi  
----
-apiVersion: v1
-kind: PersistentVolumeClaim 
-metadata:
-  name: minecraft-java-world
-spec:
-  volumeName: minecraft-java-world-pv
-  accessModes: 
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ${IMAGE}
+  name: ${IMAGE}-${VERSION}
 spec:
   selector:
     matchLabels:
-      app: ${IMAGE}
+      app: ${IMAGE}-${VERSION}
   replicas: 1
   template:
     metadata:
       labels:
-        app: ${IMAGE}
+        app: ${IMAGE}-${VERSION}
     spec:
       volumes:
       - name: backups 
         persistentVolumeClaim:
-          claimName: minecraft-java-backups
+          claimName: minecraft-java-backups-${VERSION}
       - name: world 
         persistentVolumeClaim:
-          claimName: minecraft-java-world 
+          claimName: minecraft-java-world-${VERSION}
       containers:
       - name: ${IMAGE}
         image: ${IMAGE}:${VERSION}
         imagePullPolicy: Never        
         envFrom:
         - configMapRef:
-            name: ${IMAGE}
+            name: ${IMAGE}-${VERSION}
         volumeMounts:
         - mountPath: /opt/minecraft/backups
           name: backups 
@@ -110,7 +40,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ${IMAGE}-service
+  name: ${IMAGE}-service-${VERSION_HYPHEN}
   # labels:
   #   kubernetes.io/minikube-addons-endpoint: ingress
 spec:
@@ -123,4 +53,4 @@ spec:
       port: 25575
       targetPort: mcrcon
   selector:
-    app: ${IMAGE}
+    app: ${IMAGE}-${VERSION}

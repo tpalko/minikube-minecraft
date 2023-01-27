@@ -1,0 +1,32 @@
+#!/bin/bash
+
+set -e 
+
+function rcon {
+  CMD=$1
+  /opt/minecraft/tools/mcrcon/mcrcon -H 127.0.0.1 -P 25575 -p ${RCON_PASSWORD} "$CMD}"
+}
+
+function run() {
+  echo "--------------------------------"
+  echo "-- BACKUP $(date +%F-%H-%M) ----"
+  echo "--"
+
+  rcon "save-off"
+  rcon "save-all"
+  tar -cvpzf /opt/minecraft/backups/server-$(date +%F-%H-%M).tar.gz /opt/minecraft/server
+  rcon "save-on"
+
+  echo "Deleting older backups.."
+  for OLD in $(find /opt/minecraft/backups/ -type f -mtime +3 -name '*.gz'); do 
+    rm -v ${OLD}
+  done 
+
+  echo "--"
+  echo "-- BACKUP END $(date +%F-%H-%M) ----"
+  echo "--------------------------------"
+}
+
+while :; do 
+  (run && sleep $(( 60*15 ))) || echo "OH NO! something failed in the backup.."
+done 

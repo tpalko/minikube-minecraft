@@ -17,9 +17,11 @@ WORKDIR /app
 
 RUN useradd -r -U nginx 
 
-COPY nginx-tcp.conf.tmpl .
-COPY nginx-udp.conf.tmpl .
-COPY start.sh .
-RUN chmod +x start.sh
+COPY nginx-bedrock-tcp.conf.tmpl .
+COPY nginx-bedrock-udp.conf.tmpl .
+COPY nginx-java-tcp.conf.tmpl .
 
-ENTRYPOINT ["./start.sh"]
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+ENTRYPOINT ["./entrypoint.sh"]

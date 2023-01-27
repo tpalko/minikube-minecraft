@@ -1,4 +1,4 @@
- #!/bin/bash 
+#!/bin/bash 
 
 . /opt/minecraft/scripts/backup.sh 
 echo "Starting backup.."

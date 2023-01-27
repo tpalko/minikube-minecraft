@@ -8,6 +8,8 @@ RUN mkdir -p /var/cache/apt/archives/partial \
   && apt clean \
   && rm -rf /var/cache 
 
+# COPY live/downloads ./downloads
+
 COPY setup.sh .
 RUN /bin/bash setup.sh 
 

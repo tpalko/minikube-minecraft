@@ -1,0 +1,9 @@
+{
+    "worlds": [
+        {
+            "version": "1.19.3",
+            "sha": "c9df48efed58511cdd0213c56b9013a7b5c9ac1f",
+            "world_name": "myworld"
+        }
+    ]
+}
