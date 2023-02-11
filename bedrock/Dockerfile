@@ -21,6 +21,6 @@ RUN mkdir -p server/worlds \
 EXPOSE 19132/tcp
 EXPOSE 19132/udp
 
-VOLUME /opt/minecraft/server/worlds
+# VOLUME /opt/minecraft/server/worlds
 
 CMD ["./start.sh"]

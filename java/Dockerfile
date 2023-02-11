@@ -25,10 +25,10 @@ RUN wget https://launcher.mojang.com/v1/objects/${HASH}/server.jar
 # -- 1.16.3
 #RUN wget https://launcher.mojang.com/v1/objects/f02f4473dbf152c23d7d484952121db0b36698cb/server.jar
 
-RUN mkdir patch \
-  && cd patch \
-  && wget https://launcher.mojang.com/v1/objects/02937d122c86ce73319ef9975b58896fc1b491d1/log4j2_112-116.xml \
-  && chmod 755 log4j2_112-116.xml
+# RUN mkdir patch \
+#   && cd patch \
+#   && wget https://launcher.mojang.com/v1/objects/02937d122c86ce73319ef9975b58896fc1b491d1/log4j2_112-116.xml \
+#   && chmod 755 log4j2_112-116.xml
 
 RUN java -Xmx1024M -Xms1024M -jar server.jar nogui || echo "that's ok" \
   && sed -i "s/eula=false/eula=true/" eula.txt
@@ -38,17 +38,18 @@ WORKDIR ${HOME}
 RUN useradd -r -m -U -d ${HOME} -s /bin/bash minecraft
 
 COPY start.sh .
-COPY patch ./
 
-RUN mkdir -p server/world \
-  && chown -R minecraft:minecraft . \
+
+RUN chown -R minecraft:minecraft . \
   && find . -name *.sh -execdir chmod +x '{}' \;
+
+COPY patch ./server/patch
 
 EXPOSE 25565
 EXPOSE 25575
 
 USER minecraft 
 
-VOLUME /opt/minecraft/server/world 
+# VOLUME /opt/minecraft/server/world 
 
 CMD ["./start.sh"]

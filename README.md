@@ -39,6 +39,12 @@ _and_ the following requirements must be met:
 
 Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
+### Development 
+
+* fix backup compacting / pruning 
+* Makefile 
+* sub-versions on server versions using standard-version, at least for image tagging (minecraft-server-java:1.19.3-1.0.4) 
+
 ## 3/29/22 
 
 ### The Networking 
@@ -737,20 +743,3 @@ For 1.16.5 with Morph and Rats, `~/.minecraft/mods` looks like:
 /stopsound <targets> [*|ambient|block|hostile|master|music|neutral|player|record|voice|weather]
 /summon <entity> [<pos>]
 /tag <targets> (add|list|remove)
-/team (add|empty|join|leave|list|modify|remove)
-/teammsg <message>
-/teleport (<destination>|<location>|<targets>)
-/tell -> msg
-/tellraw <targets> <message>
-/time (add|query|set)
-/title <targets> (actionbar|clear|reset|subtitle|times|title)
-/tm -> teammsg
-/tp -> teleport
-/trigger <objective> [add|set]
-/w -> msg
-/weather (clear|rain|thunder)
-/whitelist (add|list|off|on|reload|remove)
-/worldborder (add|center|damage|get|set|warning)
-/xp -> experience
-```
-

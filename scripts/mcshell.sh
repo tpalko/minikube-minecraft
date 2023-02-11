@@ -4,23 +4,31 @@
 
 function usage() {
   printf "Usage:\n\n"
-  printf "\t$0 [version] ACTION\n\n"
+  printf "\t$0 ACTION -v VERSION\n\n"
   printf "ACTION:\n\n"
   printf "\tshell - shell into running server container\n"
   printf "\tlogs - tail running server container logs\n\n"
 }
 
-VERSION=
-if [[ $# -gt 1 ]]; then 
-  VERSION=$1
-  shift 
-fi 
+case $1 in 
+  shell|logs)   ACTION=$1
+                shift 
+                echo "Action: ${ACTION}"
+                ;;
+  *)            usage 
+                exit 1
+                ;;
+esac 
 
-ACTION=
-if [[ $# -gt 0 ]]; then 
-  ACTION=$1
-  shift 
-fi 
+VERSION=
+
+while [[ $# -gt 0 ]]; do 
+  case $1 in 
+    -v)     VERSION=$2
+            shift; shift 
+            ;;
+  esac 
+done 
 
 MATCH="k8s_${IMAGE}_${IMAGE}-${VERSION}"
 
@@ -40,7 +48,6 @@ case ${ACTION} in
   logs)         echo "Logging ${CONTAINER}"
                 docker logs -f ${CONTAINER}
                 ;;
-  *)            usage; exit 1;
 esac 
 
 . ../scripts/minikube-env-deactivate.sh

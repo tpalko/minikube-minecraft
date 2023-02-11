@@ -43,6 +43,11 @@ export SPEC_BACKUP_FILE
 FORCE_WORLD_DATA_WRITE=0
 LEVELNAME_FILE=levelname.txt
 
+###########################################
+#
+#   parameter collection 
+#
+
 ACTION=$1 
 shift 
 
@@ -63,11 +68,21 @@ while [[ $# -gt 0 ]]; do
   esac 
 done 
 
+###########################################
+#
+#   validation
+#
+
 if [[ -n "${SPEC_BACKUP_FILE}" && -z "${SPEC_WORLD_NAME}" ]]; then 
   echo "If a backup file is provided, a world name must be specified."
   echo "This should be a distinct name or this world's true name, so subsequent backups of this world do not conflate with backups of another world"
   echo "CAUTION: if specifying an older backup, subsequent backups will create a historical branch"
   echo "In which case it would make sense to provide an appropriate name, e.g. myworld-alternate-from-<timestamp>"
+  exit 1
+fi 
+
+if [[ -n "${SPEC_BACKUP_FILE}" && ! -f ${SPEC_BACKUP_FILE} ]]; then 
+  echo "The backup file specified doesn't exist"
   exit 1
 fi 
 
@@ -83,27 +98,87 @@ else
   echo "Performing on all versions"
 fi 
 
+echo "Found ${#VERSION_ARRAY[@]} versions: ${VERSION_ARRAY[@]}"
+
+for VERSION in ${VERSION_ARRAY[@]}; do 
+  
+  if [[ -n "${SPEC_VERSION}" && "${VERSION}" != "${SPEC_VERSION}" ]]; then 
+    continue 
+  fi 
+
+  export WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
+  export GAMEMODE=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .gamemode")
+  export TARGET_PLATFORM=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .target_platform")
+
+  export ORIGINAL_WORLD_NAME=${WORLD_NAME}
+
+  if [[ -n "${SPEC_WORLD_NAME}" && "${SPEC_WORLD_NAME}" != "${WORLD_NAME}" ]]; then 
+    echo "Provided world name \"${SPEC_WORLD_NAME}\" is different than world name in config \"${WORLD_NAME}\""
+    echo "Config will be updated to ${SPEC_WORLD_NAME} when the world data is put in place"
+    # -- the configured environment in .jenv should be changed atomically with world data changing on disk
+    # -- so we only collect the name here, and we'll set it later 
+    WORLD_NAME="${SPEC_WORLD_NAME}"
+  fi 
+
+  if [[ -z "${WORLD_NAME}" ]]; then 
+    echo "WORLD_NAME cannot be empty, but it is"
+    echo "Check .jenv"
+    exit 1
+  fi 
+
+  export VERSION 
+  # -- change dots to hyphens for k8s standard domain naming, apparently only a problem for Service 
+  export VERSION_HYPHEN=${VERSION//./-}
+  
+  if [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+    VOLUME_BASE=${PWD}/live    
+  fi 
+
+  export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
+
+  if [[ "${ACTION}" = "up" ]]; then 
+    up
+  elif [[ "${ACTION}" = "down" ]]; then 
+    down 
+  fi 
+
+done 
+
+function target_platform_cmd() {
+  local CMD="$1"
+  case ${TARGET_PLATFORM} in 
+    minikube)   $(minikube ssh "${CMD}")
+                ;;
+    docker)     ${CMD}
+                ;;
+  esac                 
+}
+
 function load() {
 
   local BACKUP_FILE=$1
 
-  MINIKUBE_WORLD_PATH=${VOLUME_BASE}-${VERSION}/world
+  VERSIONED_WORLD_PATH=${VERSIONED_VOLUME_BASE}/world
 
   echo "Loading into minikube.."
-  
-  if [[ $(minikube ssh "find ${MINIKUBE_WORLD_PATH} -type f" | wc -l) -gt 0 ]]; then 
-    echo "There is world data loaded in ${MINIKUBE_WORLD_PATH} already."
+  WORLD_FILES_CMD="find ${VERSIONED_WORLD_PATH} -type f"
+  WORLD_FILES=$(target_platform_cmd "${WORLD_FILES_CMD}" | wc -l)
+
+  if [[ ${WORLD_FILES} -gt 0 ]]; then 
+    echo "There is world data loaded in ${VERSIONED_WORLD_PATH} already."
     echo -n "Do you want to destroy it permanently? y/N "
     read DESTROY
     if [[ "${DESTROY}" = "y" ]]; then
-      echo "Okay, we're destroying ${MINIKUBE_WORLD_PATH}.."
-      minikube ssh "sudo rm -rf ${MINIKUBE_WORLD_PATH}/*"
+      echo "Okay, we're destroying ${VERSIONED_WORLD_PATH}.."
+      DESTROY_CMD="sudo rm -rf ${VERSIONED_WORLD_PATH}/*"
+      target_platform_cmd "${DESTROY_CMD}"
+      echo "Destroyed!"
     else 
       echo "Leaving existing world data alone.."
       return 
     fi 
   else 
-    echo "No world data found in ${MINIKUBE_WORLD_PATH}, we're clear to deploy."
+    echo "No world data found in ${VERSIONED_WORLD_PATH}, we're clear to deploy."
   fi 
   
   WORK_FOLDER=_tmp_deploy_load_$(date +%Y%m%dT%H%M%S)
@@ -119,7 +194,7 @@ function load() {
     echo "${STRIP} components stripping for ${WORLD_BASE}"  
   
     echo "Expanding ${BACKUP_FILE} --> ${WORK_FOLDER}"
-    sudo tar -xzvf ${BACKUP_FILE} -C ${WORK_FOLDER} --strip-components ${STRIP}
+    sudo tar -xzvf "${BACKUP_FILE}" -C ${WORK_FOLDER} --strip-components ${STRIP}
 
   else 
 
@@ -131,39 +206,43 @@ function load() {
   # -- after unpacking, make sure the world folder has the correct levelname file 
   # -- if it doesn't match WORLD_NAME, that's weird 
   # -- but otherwise, see a matching value or create it if missing 
-  if [[ -f ${WORK_FOLDER}/${LEVELNAME_FILE} ]]; then 
-    LEVELNAME_CONTENTS=$(cat ${WORK_FOLDER}/${LEVELNAME_FILE})
+  if [[ -f "${WORK_FOLDER}/${LEVELNAME_FILE}" ]]; then 
+    LEVELNAME_CONTENTS=$(cat "${WORK_FOLDER}/${LEVELNAME_FILE}")
     if [[ "${LEVELNAME_CONTENTS}" != "${WORLD_NAME}" ]]; then 
       echo "*****"
       echo "*"
       echo "*    WHAT!?!? Replacing incorrect (${LEVELNAME_CONTENTS}) ${LEVELNAME_FILE}"
       echo "*"
       echo "*****"
-      printf "${WORLD_NAME}" > ${WORK_FOLDER}/${LEVELNAME_FILE}
+      printf "${WORLD_NAME}" > "${WORK_FOLDER}/${LEVELNAME_FILE}"
     else 
       echo "${WORLD_NAME} found as ${LEVELNAME_FILE}"
     fi     
   else 
     echo "Creating ${WORLD_NAME} as ${LEVELNAME_FILE}"
-    printf "${WORLD_NAME}" > ${WORK_FOLDER}/${LEVELNAME_FILE}
+    printf "${WORLD_NAME}" > "${WORK_FOLDER}/${LEVELNAME_FILE}"
   fi 
   
   sudo chown -R ${USER}:${USER} ${WORK_FOLDER}
   
-  echo "Copying ${BACKUP_FILE} --> ${WORK_FOLDER} --> minikube:${MINIKUBE_WORLD_PATH}"
-  docker cp "${WORK_FOLDER}" minikube:${MINIKUBE_WORLD_PATH}
+  echo "Copying ${BACKUP_FILE} --> ${WORK_FOLDER} --> minikube:${VERSIONED_WORLD_PATH}"
+  docker cp "${WORK_FOLDER}" minikube:"${VERSIONED_WORLD_PATH}"
 
-  echo "Moving ${MINIKUBE_WORLD_PATH}/${WORK_FOLDER}/* --> ${MINIKUBE_WORLD_PATH}"
-  minikube ssh "sudo mv -nv ${MINIKUBE_WORLD_PATH}/${WORK_FOLDER}/* ${MINIKUBE_WORLD_PATH}"
-  minikube ssh "sudo rm -rvf ${MINIKUBE_WORLD_PATH}/${WORK_FOLDER}"
-  minikube ssh "sudo rm -vf ${MINIKUBE_WORLD_PATH}/session.lock"
-
+  echo "Moving ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}/* --> ${VERSIONED_WORLD_PATH}"
+  
+  # -- move world data up one folder, out of transmission folder
+  target_platform_cmd "sudo mv -nv ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}/* ${VERSIONED_WORLD_PATH}"
+  # -- remove now-empty transmission folder
+  target_platform_cmd "sudo rm -rvf ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}"
+  # -- remove session.lock
+  target_platform_cmd "sudo rm -vf ${VERSIONED_WORLD_PATH}/session.lock"
+  
   rm -rf ${WORK_FOLDER}
   
-  minikube ssh "sudo chown -R 999:999 ${MINIKUBE_WORLD_PATH}"
-  echo "${BACKUP_FILE} is loaded into minikube:${MINIKUBE_WORLD_PATH}"
+  target_platform_cmd "sudo chown -R 999:999 ${VERSIONED_WORLD_PATH}"
+  echo "${BACKUP_FILE} is loaded into (${TARGET_PLATFORM}) ${VERSIONED_WORLD_PATH}"
 
-  ./envmanager ${VERSION} "${WORLD_NAME}"
+  ./envmanager update -v ${VERSION} -w "${WORLD_NAME}"
 }
 
 function up() {
@@ -173,24 +252,52 @@ function up() {
   # volumes 
   # 
 
-  # -- create the "local path" folders for the PersistentVolume resources
-  for VOLUME in world backups; do 
-    echo "Making ${VOLUME_BASE}-${VERSION}/${VOLUME}"
-    minikube ssh "mkdir -p ${VOLUME_BASE}-${VERSION}/${VOLUME}"
-    minikube ssh "sudo chown -R 999:999 ${VOLUME_BASE}-${VERSION}/${VOLUME}"
-  done 
+  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
 
-  echo "Creating volumes.."
-  YAML=$(cat ../templates/volumes.yaml | envsubst)
-  if [[ ${SHOW_TEMPLATES} -eq 1 ]]; then 
-    echo "${YAML}"
+    #############################
+    #
+    #     volumes: minikube
+    # 
+      
+    # -- create the "local path" folders for the PersistentVolume resources
+    for VOLUME in world backups; do 
+      echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+      minikube ssh "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+      minikube ssh "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    done 
+
+    echo "Creating volumes.."
+    YAML=$(cat ../templates/volumes.yaml | envsubst)
+    if [[ ${SHOW_TEMPLATES} -eq 1 ]]; then 
+      echo "${YAML}"
+    fi 
+    echo "${YAML}" | kubectl apply -f -
+
+    PATH_TO_LEVELNAME_FILE="minecraft/${TYPE}/volumes-${VERSION}/world/${LEVELNAME_FILE}"
+
+    WORLD_DATA_PRESENT=$(minikube ssh "[[ \$(find minecraft/${TYPE}/volumes-${VERSION}/world/level.dat 2>/dev/null) ]] && echo -n \"yes\" || echo -n \"no\"")
+    FOUND_WORLD=$(minikube ssh "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null" 2>/dev/null || echo "")
+    
+  elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+
+    #############################
+    #
+    #     volumes: docker
+    # 
+    
+    for VOLUME in backups log world; do 
+      echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+      mkdir -vp ${VERSIONED_VOLUME_BASE}/${VOLUME}
+    done 
+
+    PATH_TO_LEVELNAME_FILE="${VERSIONED_VOLUME_BASE}/world/${LEVELNAME_FILE}"
+
+    WORLD_DATA_PRESENT=$([[ $(find ${VERSIONED_VOLUME_BASE}/world/level.dat 2>/dev/null) ]] && echo -n "yes" || echo -n "no")
+    FOUND_WORLD=$(cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null || echo "")
+
   fi 
-  echo "${YAML}" | kubectl apply -f -
 
-  PATH_TO_LEVELNAME_FILE="minecraft/${TYPE}/volumes-${VERSION}/world/${LEVELNAME_FILE}"
-
-  WORLD_DATA_PRESENT=$(minikube ssh "[[ \$(find minecraft/${TYPE}/volumes-${VERSION}/world/level.dat 2>/dev/null) ]] && echo -n \"yes\" || echo -n \"no\"")
-  FOUND_WORLD=$(minikube ssh "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null" || echo "" 2>/dev/null)
+  $(target_platform_cmd "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null") 2>/dev/null || echo ""
 
   # -- if world data and found world matches WORLD_NAME, leave it be
   # -- this would be a simple server restart / redeployment 
@@ -202,21 +309,21 @@ function up() {
   
 
   if [[ ${FORCE_WORLD_DATA_WRITE} -eq 0 && "${WORLD_DATA_PRESENT}" = "yes" && -n "${FOUND_WORLD}" && "${FOUND_WORLD}" = "${WORLD_NAME}" ]]; then     
-    echo "World data found, and it matches the environment (WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT}, FOUND_WORLD=${FOUND_WORLD}, WORLD_NAME=${WORLD_NAME})"
+    echo "World data found, and it matches the environment (FORCE_WORLD_DATA_WRITE=${FORCE_WORLD_DATA_WRITE} WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT} FOUND_WORLD=${FOUND_WORLD} WORLD_NAME=${WORLD_NAME})"
   elif [[ ${FORCE_WORLD_DATA_WRITE} -eq 1 || ("${WORLD_DATA_PRESENT}" = "no" || (-n "${FOUND_WORLD}" && "${FOUND_WORLD}" != "${WORLD_NAME}")) ]]; then 
-    echo "World data not found or the found world name doesn't match the environment (WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT}, FOUND_WORLD=${FOUND_WORLD}, WORLD_NAME=${WORLD_NAME})"
+    echo "World data not found, or the found world name doesn't match the environment, or we're forcing deployment (FORCE_WORLD_DATA_WRITE=${FORCE_WORLD_DATA_WRITE} WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT} FOUND_WORLD=${FOUND_WORLD} WORLD_NAME=${WORLD_NAME})"
     if [[ -n "${SPEC_BACKUP_FILE}" ]]; then 
       echo "Using specified backup ${SPEC_BACKUP_FILE}"
       BACKUP_TO_LOAD="${SPEC_BACKUP_FILE}"
     else 
-      echo "Searching for a recent backup of ${WORLD_NAME} in backups/${VERSION}"
-      BACKUP_TO_LOAD=$(find ${PWD}/backups/${VERSION}/${WORLD_NAME}/*.tar.gz -type f 2>/dev/null | sort -n -r | head -n 1)
+      echo "Searching for a recent backup of ${WORLD_NAME} in backups/${VERSION}/${WORLD_NAME}"
+      BACKUP_TO_LOAD=$(find "${PWD}/backups/${VERSION}/${WORLD_NAME}" -name "*.tar.gz" -type f 2>/dev/null | sort -n -r | head -n 1)
     fi 
     if [[ -z "${BACKUP_TO_LOAD}" ]]; then 
       echo "A backup could not be found (VERSION=${VERSION}, WORLD_NAME=${WORLD_NAME})"
     else
       echo "Loading backup ${BACKUP_TO_LOAD}"
-      load ${BACKUP_TO_LOAD}
+      load "${BACKUP_TO_LOAD}"
     fi 
   elif [[ "${WORLD_DATA_PRESENT}" = "yes" && -z "${FOUND_WORLD}" ]]; then 
     echo "World data found, but no ${LEVELNAME_FILE} level name file was found. This should be corrected - but has it changed?"
@@ -233,13 +340,13 @@ function up() {
     fi 
 
     echo "Creating ${PATH_TO_LEVELNAME_FILE}"
-    minikube ssh "sudo touch ${PATH_TO_LEVELNAME_FILE}"
+    minikube ssh "sudo touch \"${PATH_TO_LEVELNAME_FILE}\""
     echo "Permissioning ${PATH_TO_LEVELNAME_FILE}"
-    minikube ssh "sudo chmod 664 ${PATH_TO_LEVELNAME_FILE}"
+    minikube ssh "sudo chmod 664 \"${PATH_TO_LEVELNAME_FILE}\""
     echo "Writing level name to ${PATH_TO_LEVELNAME_FILE}"
-    minikube ssh "echo -n \"${WORLD_NAME_TO_WRITE}\" > ${PATH_TO_LEVELNAME_FILE}"
+    minikube ssh "echo -n \"${WORLD_NAME_TO_WRITE}\" > \"${PATH_TO_LEVELNAME_FILE}\""
   else 
-    echo "(WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT}, FOUND_WORLD=${FOUND_WORLD}, WORLD_NAME=${WORLD_NAME})"
+    echo "No expected convergence of state was observed (FORCE_WORLD_DATA_WRITE=${FORCE_WORLD_DATA_WRITE} WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT} FOUND_WORLD=${FOUND_WORLD} WORLD_NAME=${WORLD_NAME})"
   fi 
 
   #############################3
@@ -252,11 +359,12 @@ function up() {
     && kubectl create configmap --from-env-file=.env ${IMAGE}-${VERSION}
   
   if [[ "${VERSION}" = "1.16.5" ]]; then 
-    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"JAVA_CONF\": \"-Dlog4j2.configurationFile=patch/log4j2_112-116.xml\"}}"
+    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"JAVA_CONF\": \"-Dlog4j2.configurationFile=patch/log4j2112116.xml\"}}"
   fi 
 
   kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"VERSION\": \"${VERSION}\"}}"
   kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"WORLD_NAME\": \"${WORLD_NAME}\"}}"
+  kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"GAMEMODE\": \"${GAMEMODE}\"}}"
   
   #############################3
   #
@@ -272,16 +380,43 @@ function up() {
   
   kubectl rollout restart deployment ${IMAGE}-${VERSION}
   
+  DEPLOY_SERVICES=$(minikube service list | grep 1-19-3 -A 1 | grep -v mcrcon)
+
+  export MINIKUBE_URL_CODE
+  DEPLOY_MINIKUBE_URL=$([[ ${DEPLOY_SERVICES} =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:([0-9]{5}) ]] \
+    && echo ${BASH_REMATCH[0]} \
+    && MINIKUBE_URL_CODE=$? \
+    || (MINIKUBE_URL_CODE=$? && echo "")
+  )
+
+  echo "/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"
+  echo "**"
+  echo "**"
+  echo "** -=-=-=-=-     ${TYPE} ${VERSION} Minikube container URL    -=-=-=-=-=-"
+  echo "**"
+  if [[ ${MINIKUBE_URL_CODE} -eq 0 ]]; then 
+    echo "**          ----->    http://${DEPLOY_MINIKUBE_URL}   <-----"
+  else 
+    echo "**                 (URL match statement failed, sorry!)"
+  fi 
+  echo "**"
+  echo "**"
+  echo "/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"
+
   #############################3
   #
-  # backup
+  # pull and prune backups
   # 
 
   [[ ! -d ${PWD}/backups/${VERSION} ]] && mkdir -pv ${PWD}/backups/${VERSION}
   CRONTAB_TITLE="${IMAGE}-${VERSION} minikube world volume backup"
   echo "Removing and re-adding crontab: ${CRONTAB_TITLE}"
-  crontab -l | awk "/${CRONTAB_TITLE}/{c=2;next} !(c&&c--)" | crontab -  
-  printf "$(crontab -l)\n# ${CRONTAB_TITLE}\n*/15 * * * * docker cp \"minikube:${VOLUME_BASE}-${VERSION}/backups/${WORLD_NAME}\" \"${PWD}/backups/${VERSION}/\"\n" | crontab -
+  # crontab -l | awk "/^# ${CRONTAB_TITLE}$/{c=2;next} !(c&&c--)" | crontab -  
+  crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
+  printf "$(crontab -l) \n\
+# ${CRONTAB_TITLE} \n\
+#*/15 * * * * docker cp \"minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\" \"${PWD}/backups/${VERSION}/\" \n\
+" | crontab -
     
 }
 
@@ -293,9 +428,9 @@ function down() {
   # 
 
   echo "Deleting configmap.."
-  cat templates/minecraft_env.yaml | envsubst | kubectl delete -f -
+  cat templates/minecraft_env.yaml | envsubst | kubectl delete -f - || echo "Env delete failed"
   echo "Deleting volumes, deployment, and services.."
-  cat templates/minecraft.yaml | envsubst | kubectl delete -f -
+  cat templates/minecraft.yaml | envsubst | kubectl delete -f - || echo "Deployment delete failed"
   
   #############################3
   #
@@ -305,47 +440,8 @@ function down() {
   CRONTAB_TITLE="${IMAGE}-${VERSION} minikube world volume backup"
   crontab -l | awk "/${CRONTAB_TITLE}/{c=2;next} !(c&&c--)" | crontab -  
   
-  echo "Copying the last of the backups from ${VOLUME_BASE}-${VERSION}/backups/${WORLD_NAME}.."
-  docker cp "minikube:${VOLUME_BASE}-${VERSION}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/"
+  echo "Copying the last of the backups from ${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}.."
+  docker cp "minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
 }
 
-echo "Found ${#VERSION_ARRAY[@]} versions: ${VERSION_ARRAY[@]}"
 
-for VERSION in ${VERSION_ARRAY[@]}; do 
-  
-  if [[ -n "${SPEC_VERSION}" && "${VERSION}" != "${SPEC_VERSION}" ]]; then 
-    continue 
-  fi 
-
-  WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
-  export ORIGINAL_WORLD_NAME=${WORLD_NAME}
-
-  if [[ -n "${SPEC_WORLD_NAME}" && "${SPEC_WORLD_NAME}" != "${WORLD_NAME}" ]]; then 
-    echo "Provided world name \"${SPEC_WORLD_NAME}\" is different than world name in config \"${WORLD_NAME}\""
-        
-    # -- TODO: the configured environment should be changed atomically with world data changing on disk
-    WORLD_NAME="${SPEC_WORLD_NAME}"
-
-    # echo "Updating config.."
-    # ./envmanager ${VERSION} "${SPEC_WORLD_NAME}"
-    # -- pull all the way from config again, in case write failed or something  
-    # WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
-  fi 
-
-  if [[ -z "${WORLD_NAME}" ]]; then 
-    echo "WORLD_NAME cannot be empty, but it is"
-    exit 1
-  fi 
-
-  export VERSION 
-  # -- change dots to hyphens for k8s standard domain naming, apparently only a problem for Service 
-  export VERSION_HYPHEN=${VERSION//./-}
-  export WORLD_NAME  
-
-  if [[ "${ACTION}" = "up" ]]; then 
-    up
-  elif [[ "${ACTION}" = "down" ]]; then 
-    down 
-  fi 
-
-done 

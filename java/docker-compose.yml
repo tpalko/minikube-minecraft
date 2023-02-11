@@ -3,11 +3,11 @@ services:
   minecraft-server-java:
     image: ${IMAGE}:${VERSION}
     build: .
-    container_name: ${IMAGE}
+    container_name: ${IMAGE}-${VERSION}
     env_file: .env
     restart: always
     volumes:
-      - ${PWD}/live/world:/opt/minecraft/server/world
+      - ${PWD}/live/world:/opt/minecraft/server/${WORLD_NAME}
       - ${PWD}/live/backups:/opt/minecraft/backups
       - ${PWD}/live/log:/opt/minecraft/log
     ports:

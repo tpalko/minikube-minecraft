@@ -9,6 +9,9 @@ while [[ $# -gt 0 ]]; do
     -v)     SPECVERSION=$2
             shift; shift 
             ;;
+      *)    echo "Ignoring $1"
+            shift 
+            ;;
   esac 
 done 
 

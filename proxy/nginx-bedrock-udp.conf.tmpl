@@ -3,8 +3,8 @@ worker_processes 1;
 user nginx;
 events { worker_connections 1024; }
 stream {
-  server {
-		listen ${MINECRAFT_PROXY_BEDROCK_PORT} udp;
-		proxy_pass	${MINECRAFT_PROXY_BEDROCK_UPSTREAM_HOST}:${MINECRAFT_PROXY_BEDROCK_PORT};
+    server {
+		listen ${LISTEN_PORT} udp;
+		proxy_pass	${HOST}:${MINECRAFT_PROXY_BEDROCK_PORT};
  	}
 }

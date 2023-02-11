@@ -5,6 +5,7 @@ RUN apt -y update \
     build-essential \
     ca-certificates-java \
     git \
+    jq \
     openjdk-17-jdk \
     wget \
     gettext-base \
@@ -12,7 +13,6 @@ RUN apt -y update \
     telnet \
     vim \
   && apt clean \
-  && rm -rf /var/cache \
   && update-ca-certificates -f
 
 ENV HOME /opt/minecraft
@@ -25,7 +25,5 @@ RUN mkdir -p ${HOME}/backups \
   && mkdir -p ${HOME}/log
   
 COPY scripts ./scripts
-
-RUN echo ". ${HOME}/scripts/backup.sh" >> ${HOME}/.bashrc
 
 VOLUME ${HOME}/backups
