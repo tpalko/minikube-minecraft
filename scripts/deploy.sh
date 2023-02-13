@@ -19,9 +19,9 @@
 # and changed to a generic timestamp-based name to avoid a possible actual world with (lost/unreachable) backup history from being "reborn"
 
 set -e 
-
+ 
+. common 
 . .env 
-VERSION_ARRAY=($(cat .jenv | jq -r ".worlds | .[] | .version"))
 
 export TYPE 
 export VOLUME_BASE 
@@ -97,62 +97,6 @@ if [[ -n "${SPEC_VERSION}" ]]; then
 else 
   echo "Performing on all versions"
 fi 
-
-echo "Found ${#VERSION_ARRAY[@]} versions: ${VERSION_ARRAY[@]}"
-
-for VERSION in ${VERSION_ARRAY[@]}; do 
-  
-  if [[ -n "${SPEC_VERSION}" && "${VERSION}" != "${SPEC_VERSION}" ]]; then 
-    continue 
-  fi 
-
-  export WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
-  export GAMEMODE=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .gamemode")
-  export TARGET_PLATFORM=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .target_platform")
-
-  export ORIGINAL_WORLD_NAME=${WORLD_NAME}
-
-  if [[ -n "${SPEC_WORLD_NAME}" && "${SPEC_WORLD_NAME}" != "${WORLD_NAME}" ]]; then 
-    echo "Provided world name \"${SPEC_WORLD_NAME}\" is different than world name in config \"${WORLD_NAME}\""
-    echo "Config will be updated to ${SPEC_WORLD_NAME} when the world data is put in place"
-    # -- the configured environment in .jenv should be changed atomically with world data changing on disk
-    # -- so we only collect the name here, and we'll set it later 
-    WORLD_NAME="${SPEC_WORLD_NAME}"
-  fi 
-
-  if [[ -z "${WORLD_NAME}" ]]; then 
-    echo "WORLD_NAME cannot be empty, but it is"
-    echo "Check .jenv"
-    exit 1
-  fi 
-
-  export VERSION 
-  # -- change dots to hyphens for k8s standard domain naming, apparently only a problem for Service 
-  export VERSION_HYPHEN=${VERSION//./-}
-  
-  if [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
-    VOLUME_BASE=${PWD}/live    
-  fi 
-
-  export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
-
-  if [[ "${ACTION}" = "up" ]]; then 
-    up
-  elif [[ "${ACTION}" = "down" ]]; then 
-    down 
-  fi 
-
-done 
-
-function target_platform_cmd() {
-  local CMD="$1"
-  case ${TARGET_PLATFORM} in 
-    minikube)   $(minikube ssh "${CMD}")
-                ;;
-    docker)     ${CMD}
-                ;;
-  esac                 
-}
 
 function load() {
 
@@ -252,6 +196,15 @@ function up() {
   # volumes 
   # 
 
+  # -- create the "local path" folders for the PersistentVolume resources
+  for VOLUME in world backups; do 
+    echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    target_platform_cmd "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    target_platform_cmd "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+  done 
+
+  PATH_TO_LEVELNAME_FILE="${VERSIONED_VOLUME_BASE}/world/${LEVELNAME_FILE}"
+  
   if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
 
     #############################
@@ -260,11 +213,11 @@ function up() {
     # 
       
     # -- create the "local path" folders for the PersistentVolume resources
-    for VOLUME in world backups; do 
-      echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
-      minikube ssh "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
-      minikube ssh "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
-    done 
+    # for VOLUME in world backups; do 
+    #   echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    #   minikube ssh "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    #   minikube ssh "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    # done 
 
     echo "Creating volumes.."
     YAML=$(cat ../templates/volumes.yaml | envsubst)
@@ -273,10 +226,10 @@ function up() {
     fi 
     echo "${YAML}" | kubectl apply -f -
 
-    PATH_TO_LEVELNAME_FILE="minecraft/${TYPE}/volumes-${VERSION}/world/${LEVELNAME_FILE}"
+    # PATH_TO_LEVELNAME_FILE="minecraft/${TYPE}/volumes-${VERSION}/world/${LEVELNAME_FILE}"
 
-    WORLD_DATA_PRESENT=$(minikube ssh "[[ \$(find minecraft/${TYPE}/volumes-${VERSION}/world/level.dat 2>/dev/null) ]] && echo -n \"yes\" || echo -n \"no\"")
-    FOUND_WORLD=$(minikube ssh "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null" 2>/dev/null || echo "")
+    WORLD_DATA_PRESENT=$(minikube ssh "[[ \$(find ${VERSIONED_VOLUME_BASE}/world/level.dat 2>/dev/null) ]] && echo -n \"yes\" || echo -n \"no\"")
+    # FOUND_WORLD=$(minikube ssh "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null" 2>/dev/null || echo "")
     
   elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
 
@@ -285,19 +238,19 @@ function up() {
     #     volumes: docker
     # 
     
-    for VOLUME in backups log world; do 
-      echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
-      mkdir -vp ${VERSIONED_VOLUME_BASE}/${VOLUME}
-    done 
+    # for VOLUME in backups log world; do 
+    #   echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    #   mkdir -vp ${VERSIONED_VOLUME_BASE}/${VOLUME}
+    # done 
 
-    PATH_TO_LEVELNAME_FILE="${VERSIONED_VOLUME_BASE}/world/${LEVELNAME_FILE}"
+    # PATH_TO_LEVELNAME_FILE="${VERSIONED_VOLUME_BASE}/world/${LEVELNAME_FILE}"
 
     WORLD_DATA_PRESENT=$([[ $(find ${VERSIONED_VOLUME_BASE}/world/level.dat 2>/dev/null) ]] && echo -n "yes" || echo -n "no")
-    FOUND_WORLD=$(cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null || echo "")
+    # FOUND_WORLD=$(cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null || echo "")
 
   fi 
 
-  $(target_platform_cmd "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null") 2>/dev/null || echo ""
+  FOUND_WORLD=$(target_platform_cmd "cat ${PATH_TO_LEVELNAME_FILE} 2>/dev/null" 2>/dev/null || echo "")
 
   # -- if world data and found world matches WORLD_NAME, leave it be
   # -- this would be a simple server restart / redeployment 
@@ -340,11 +293,11 @@ function up() {
     fi 
 
     echo "Creating ${PATH_TO_LEVELNAME_FILE}"
-    minikube ssh "sudo touch \"${PATH_TO_LEVELNAME_FILE}\""
+    target_platform_cmd "sudo touch \"${PATH_TO_LEVELNAME_FILE}\""
     echo "Permissioning ${PATH_TO_LEVELNAME_FILE}"
-    minikube ssh "sudo chmod 664 \"${PATH_TO_LEVELNAME_FILE}\""
+    target_platform_cmd "sudo chmod 664 \"${PATH_TO_LEVELNAME_FILE}\""
     echo "Writing level name to ${PATH_TO_LEVELNAME_FILE}"
-    minikube ssh "echo -n \"${WORLD_NAME_TO_WRITE}\" > \"${PATH_TO_LEVELNAME_FILE}\""
+    target_platform_cmd "echo -n \"${WORLD_NAME_TO_WRITE}\" > \"${PATH_TO_LEVELNAME_FILE}\""
   else 
     echo "No expected convergence of state was observed (FORCE_WORLD_DATA_WRITE=${FORCE_WORLD_DATA_WRITE} WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT} FOUND_WORLD=${FOUND_WORLD} WORLD_NAME=${WORLD_NAME})"
   fi 
@@ -354,70 +307,88 @@ function up() {
   # environment
   # 
 
-  echo "Deleting and re-creating ${IMAGE}-${VERSION} configmap from .env.."
-  (kubectl get configmap ${IMAGE}-${VERSION} >/dev/null 2>&1 && kubectl delete configmap ${IMAGE}-${VERSION} || true) \
-    && kubectl create configmap --from-env-file=.env ${IMAGE}-${VERSION}
+  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+
+    echo "Deleting and re-creating ${IMAGE}-${VERSION} configmap from .env.."
+    (kubectl get configmap ${IMAGE}-${VERSION} >/dev/null 2>&1 && kubectl delete configmap ${IMAGE}-${VERSION} || true) \
+      && kubectl create configmap --from-env-file=.env ${IMAGE}-${VERSION}
+    
+    if [[ "${VERSION}" = "1.16.5" ]]; then 
+      kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"JAVA_CONF\": \"-Dlog4j2.configurationFile=patch/log4j2112116.xml\"}}"
+    fi 
+
+    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"VERSION\": \"${VERSION}\"}}"
+    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"WORLD_NAME\": \"${WORLD_NAME}\"}}"
+    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"GAMEMODE\": \"${GAMEMODE}\"}}"
   
-  if [[ "${VERSION}" = "1.16.5" ]]; then 
-    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"JAVA_CONF\": \"-Dlog4j2.configurationFile=patch/log4j2112116.xml\"}}"
   fi 
 
-  kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"VERSION\": \"${VERSION}\"}}"
-  kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"WORLD_NAME\": \"${WORLD_NAME}\"}}"
-  kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"GAMEMODE\": \"${GAMEMODE}\"}}"
-  
   #############################3
   #
   # deployment
   # 
 
-  echo "Creating ${IMAGE}-${VERSION} deployment, and services.."
-  YAML=$(cat templates/minecraft.yaml | envsubst)
-  if [[ ${SHOW_TEMPLATES} -eq 1 ]]; then 
-    echo "${YAML}"
-  fi 
-  echo "${YAML}" | kubectl apply -f -
-  
-  kubectl rollout restart deployment ${IMAGE}-${VERSION}
-  
-  DEPLOY_SERVICES=$(minikube service list | grep 1-19-3 -A 1 | grep -v mcrcon)
+  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+    
+    echo "Creating ${IMAGE}-${VERSION} deployment, and services.."
+    YAML=$(cat templates/minecraft.yaml | envsubst)
+    if [[ ${SHOW_TEMPLATES} -eq 1 ]]; then 
+      echo "${YAML}"
+    fi 
+    echo "${YAML}" | kubectl apply -f -
+    
+    kubectl rollout restart deployment ${IMAGE}-${VERSION}
+    
+    DEPLOY_SERVICES=$(minikube service list | grep 1-19-3 -A 1 | grep -v mcrcon)
 
-  export MINIKUBE_URL_CODE
-  DEPLOY_MINIKUBE_URL=$([[ ${DEPLOY_SERVICES} =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:([0-9]{5}) ]] \
-    && echo ${BASH_REMATCH[0]} \
-    && MINIKUBE_URL_CODE=$? \
-    || (MINIKUBE_URL_CODE=$? && echo "")
-  )
+    export MINIKUBE_URL_CODE
+    DEPLOY_MINIKUBE_URL=$([[ ${DEPLOY_SERVICES} =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:([0-9]{5}) ]] \
+      && echo ${BASH_REMATCH[0]} \
+      && MINIKUBE_URL_CODE=$? \
+      || (MINIKUBE_URL_CODE=$? && echo "")
+    )
 
-  echo "/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"
-  echo "**"
-  echo "**"
-  echo "** -=-=-=-=-     ${TYPE} ${VERSION} Minikube container URL    -=-=-=-=-=-"
-  echo "**"
-  if [[ ${MINIKUBE_URL_CODE} -eq 0 ]]; then 
-    echo "**          ----->    http://${DEPLOY_MINIKUBE_URL}   <-----"
-  else 
-    echo "**                 (URL match statement failed, sorry!)"
+    echo "/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"
+    echo "**"
+    echo "**"
+    echo "** -=-=-=-=-     ${TYPE} ${VERSION} Minikube container URL    -=-=-=-=-=-"
+    echo "**"
+    if [[ ${MINIKUBE_URL_CODE} -eq 0 ]]; then 
+      echo "**          ----->    http://${DEPLOY_MINIKUBE_URL}   <-----"
+    else 
+      echo "**                 (URL match statement failed, sorry!)"
+    fi 
+    echo "**"
+    echo "**"
+    echo "/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"
+
+  elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+
+    docker-compose up --force-recreate -d $@
+
   fi 
-  echo "**"
-  echo "**"
-  echo "/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"
 
   #############################3
   #
   # pull and prune backups
   # 
 
-  [[ ! -d ${PWD}/backups/${VERSION} ]] && mkdir -pv ${PWD}/backups/${VERSION}
+  [[ ! -d ${PWD}/backups/${VERSION} ]] && mkdir -pv ${PWD}/backups/${VERSION}  
   CRONTAB_TITLE="${IMAGE}-${VERSION} minikube world volume backup"
-  echo "Removing and re-adding crontab: ${CRONTAB_TITLE}"
-  # crontab -l | awk "/^# ${CRONTAB_TITLE}$/{c=2;next} !(c&&c--)" | crontab -  
-  crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
-  printf "$(crontab -l) \n\
+
+  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+
+    echo "Removing and re-adding crontab: ${CRONTAB_TITLE}"
+    # crontab -l | awk "/^# ${CRONTAB_TITLE}$/{c=2;next} !(c&&c--)" | crontab -  
+    crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
+
+    printf "$(crontab -l) \n\
 # ${CRONTAB_TITLE} \n\
 #*/15 * * * * docker cp \"minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\" \"${PWD}/backups/${VERSION}/\" \n\
 " | crontab -
-    
+
+  fi 
+
 }
 
 function down() {
@@ -444,4 +415,51 @@ function down() {
   docker cp "minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
 }
 
+for VERSION in ${VERSION_ARRAY[@]}; do 
+  
+  export VERSION 
 
+  if [[ -n "${SPEC_VERSION}" && "${VERSION}" != "${SPEC_VERSION}" ]]; then 
+    continue 
+  fi 
+
+  export WORLD_NAME=$(version_parameter world_name)
+  export GAMEMODE=$(version_parameter gamemode)
+  export TARGET_PLATFORM=$(version_parameter target_platform)
+
+  # export WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
+  # export GAMEMODE=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .gamemode")
+  # export TARGET_PLATFORM=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .target_platform")
+
+  export ORIGINAL_WORLD_NAME=${WORLD_NAME}
+
+  if [[ -n "${SPEC_WORLD_NAME}" && "${SPEC_WORLD_NAME}" != "${WORLD_NAME}" ]]; then 
+    echo "Provided world name \"${SPEC_WORLD_NAME}\" is different than world name in config \"${WORLD_NAME}\""
+    echo "Config will be updated to ${SPEC_WORLD_NAME} when the world data is put in place"
+    # -- the configured environment in .jenv should be changed atomically with world data changing on disk
+    # -- so we only collect the name here, and we'll set it later 
+    WORLD_NAME="${SPEC_WORLD_NAME}"
+  fi 
+
+  if [[ -z "${WORLD_NAME}" ]]; then 
+    echo "WORLD_NAME cannot be empty, but it is"
+    echo "Check .jenv"
+    exit 1
+  fi 
+
+  # -- change dots to hyphens for k8s standard domain naming, apparently only a problem for Service 
+  export VERSION_HYPHEN=${VERSION//./-}
+  
+  if [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+    VOLUME_BASE=${PWD}/live/volumes    
+  fi 
+
+  export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
+
+  if [[ "${ACTION}" = "up" ]]; then 
+    up
+  elif [[ "${ACTION}" = "down" ]]; then 
+    down 
+  fi 
+
+done 

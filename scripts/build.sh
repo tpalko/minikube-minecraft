@@ -20,10 +20,8 @@ pushd ../
 ./build.sh $@
 popd 
 
+. common 
 . .env 
-
-VERSION_ARRAY=($(cat .jenv | jq -r ".worlds | .[] | .version"))
-echo "Found ${#VERSION_ARRAY[@]} versions: ${VERSION_ARRAY[@]}"
 
 for VERSION in ${VERSION_ARRAY[@]}; do 
 

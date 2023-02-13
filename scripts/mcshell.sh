@@ -1,5 +1,6 @@
 #!/bin/bash 
 
+. common 
 . .env 
 
 function usage() {
@@ -30,9 +31,15 @@ while [[ $# -gt 0 ]]; do
   esac 
 done 
 
-MATCH="k8s_${IMAGE}_${IMAGE}-${VERSION}"
+TARGET_PLATFORM=$(version_parameter target_platform)
 
-. ../scripts/minikube-env.sh
+case ${TARGET_PLATFORM} in 
+  minikube)   MATCH="k8s_${IMAGE}_${IMAGE}-${VERSION}"
+              . ../scripts/minikube-env.sh
+              ;;
+  docker)     MATCH="${IMAGE}-${VERSION}"
+              ;;
+esac 
 
 CONTAINER=$(docker ps --filter="name=${MATCH}" --filter="status=running" -q)
 
@@ -50,4 +57,4 @@ case ${ACTION} in
                 ;;
 esac 
 
-. ../scripts/minikube-env-deactivate.sh
+[[ "${TARGET_PLATFORM}" = "minikube" ]] && . ../scripts/minikube-env-deactivate.sh

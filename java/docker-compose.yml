@@ -1,15 +1,18 @@
 version: '3.1'
 services:
   minecraft-server-java:
-    image: ${IMAGE}:${VERSION}
-    build: .
+    image: ${IMAGE}:${VERSION}    
     container_name: ${IMAGE}-${VERSION}
     env_file: .env
+    environment:
+      - VERSION=${VERSION}
+      - WORLD_NAME=${WORLD_NAME}
+      - GAMEMODE=${GAMEMODE}
     restart: always
     volumes:
-      - ${PWD}/live/world:/opt/minecraft/server/${WORLD_NAME}
-      - ${PWD}/live/backups:/opt/minecraft/backups
-      - ${PWD}/live/log:/opt/minecraft/log
+      - ${PWD}/live/volumes-${VERSION}/world:/opt/minecraft/server/${WORLD_NAME}
+      - ${PWD}/live/volumes-${VERSION}/backups:/opt/minecraft/backups
+      - ${PWD}/live/volumes-${VERSION}/log:/opt/minecraft/log
     ports:
       - 25565:25565
       - 25575:25575
