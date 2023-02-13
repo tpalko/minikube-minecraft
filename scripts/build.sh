@@ -15,11 +15,6 @@ while [[ $# -gt 0 ]]; do
   esac 
 done 
 
-. ../scripts/minikube-env.sh 
-
-MINIKUBE_ENV_RESULT=$?
-
-[[ ${MINIKUBE_ENV_RESULT} -gt 0 ]] && echo "Something went wrong sourcing minikube env.." && exit ${MINIKUBE_ENV_RESULT}
 
 pushd ../
 ./build.sh $@
@@ -37,11 +32,20 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   fi 
 
   HASH=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .sha")
+  TARGET_PLATFORM=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .target_platform")
 
   echo "Building ${IMAGE}:${VERSION} from ${HASH}.."
 
+  [[ "${TARGET_PLATFORM}" = "minikube" ]] \
+    && (
+      . ../scripts/minikube-env.sh \
+      || (RESULT=$? && echo "Something went wrong sourcing minikube env.." && exit ${RESULT})
+    )
+
   docker build $@ -t ${IMAGE}:${VERSION} --build-arg HASH=${HASH} . 
+
+  [[ "${TARGET_PLATFORM}" = "minikube" ]] && . ../scripts/minikube-env-deactivate.sh
 
 done 
 
-. ../scripts/minikube-env-deactivate.sh
+

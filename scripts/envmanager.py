@@ -1,5 +1,6 @@
 #!/usr/bin/env python3 
 
+import os
 import sys 
 import json 
 
@@ -54,6 +55,10 @@ if (not version and action in ['add', 'update', 'delete']) or action not in ['ad
     sys.exit(1)
 
 env = {}
+
+if not os.path.exists('.jenv'):
+  with open('.jenv', 'w') as f:
+    f.write(json.dumps({'worlds': []}, indent=4))
 
 with open('.jenv', 'r') as f:
     env = json.loads(f.read())
