@@ -1,3 +1,14 @@
 worlds
 src
 *.jenv
+*_backup_marker
+.env
+live
+backups
+build
+deploy
+mcshell
+load
+run
+common
+envmanager

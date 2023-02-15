@@ -15,13 +15,12 @@ while [[ $# -gt 0 ]]; do
   esac 
 done 
 
+. common
+. .env 
 
 pushd ../
 ./build.sh $@
 popd 
-
-. common 
-. .env 
 
 for VERSION in ${VERSION_ARRAY[@]}; do 
 
