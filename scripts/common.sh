@@ -5,8 +5,9 @@ function version_parameter() {
 
 function target_platform_cmd() {
   local CMD="$1"
+#   echo "Executing on \"${TARGET_PLATFORM}\": ${CMD}"
   case ${TARGET_PLATFORM} in 
-    minikube)   $(minikube ssh "${CMD}")
+    minikube)   minikube ssh "${CMD}"
                 ;;
     docker)     ${CMD}
                 ;;

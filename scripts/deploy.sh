@@ -81,8 +81,10 @@ if [[ -n "${SPEC_BACKUP_FILE}" && -z "${SPEC_WORLD_NAME}" ]]; then
   exit 1
 fi 
 
-if [[ -n "${SPEC_BACKUP_FILE}" && ! -f ${SPEC_BACKUP_FILE} ]]; then 
-  echo "The backup file specified doesn't exist"
+if [[ ("${SPEC_BACKUP_FILE}" =~ .*\.tar\.gz && ! -f "${SPEC_BACKUP_FILE}") \
+  || ! -d ${SPEC_BACKUP_FILE} ]]; then 
+
+  echo "${SPEC_BACKUP_FILE} doesn't exist"
   exit 1
 fi 
 
@@ -479,7 +481,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   export GAMEMODE=$(version_parameter gamemode)
   export TARGET_PLATFORM=$(version_parameter target_platform)
   export CRONTAB_TITLE="${IMAGE}-${VERSION} ${TARGET_PLATFORM} world volume backup"
-  export MOTD="${WORLD_NAME} (${VERSION})"
+  
 
   # export WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
   # export GAMEMODE=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .gamemode")
@@ -493,7 +495,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
     # -- the configured environment in .jenv should be changed atomically with world data changing on disk
     # -- so we only collect the name here, and we'll set it later 
     WORLD_NAME="${SPEC_WORLD_NAME}"
-  fi 
+  fi   
 
   if [[ -z "${WORLD_NAME}" ]]; then 
     echo "WORLD_NAME cannot be empty, but it is"
@@ -501,6 +503,9 @@ for VERSION in ${VERSION_ARRAY[@]}; do
     exit 1
   fi 
 
+  echo "Using world name: ${WORLD_NAME}"
+  
+  export MOTD="${WORLD_NAME} (${VERSION})"
   # -- change dots to hyphens for k8s standard domain naming, apparently only a problem for Service 
   export VERSION_HYPHEN=${VERSION//./-}
   

@@ -41,7 +41,9 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
 ### Development 
 
-* fix backup compacting / pruning 
+* extract backup pruning to work independently
+* handle minikube + docker deployments together without ports clashing (globally incrementing)
+* comprehensive status page - what is deployed where + connection details, including proxy status
 * Makefile 
 * sub-versions on server versions using standard-version, at least for image tagging (minecraft-server-java:1.19.3-1.0.4) 
 
