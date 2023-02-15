@@ -189,6 +189,42 @@ function load() {
   ./envmanager update -v ${VERSION} -w "${WORLD_NAME}"
 }
 
+function clear_crontab_backup() {
+
+  echo "Removing and re-adding crontab: ${CRONTAB_TITLE}"
+  # crontab -l | awk "/^# ${CRONTAB_TITLE}$/{c=2;next} !(c&&c--)" | crontab -  
+  crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
+}
+
+function add_crontab_backup() {
+  
+  printf "$(crontab -l) \n\
+# ${CRONTAB_TITLE} \n\
+#*/15 * * * * ${BACKUP_CP_CMD} \"${PWD}/backups/${VERSION}/\" \n\
+" | crontab -
+
+}
+
+# function add_crontab_minikube_backup() {
+
+#   # -- docker cp must copy the whole folder, wildcards no happy  
+#   # -- notice the docker target does the same thing for parity
+#   printf "$(crontab -l) \n\
+# # ${CRONTAB_TITLE} \n\
+# #*/15 * * * * docker cp \"minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\" \"${PWD}/backups/${VERSION}/\" \n\
+# " | crontab -
+
+# }
+
+# function add_crontab_docker_backup() {
+
+#   printf "$(crontab -l) \n\
+# # ${CRONTAB_TITLE} \n\
+# */15 * * * * cp -anv \"${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\" \"${PWD}/backups/${VERSION}/\" \n\
+# " | crontab -
+
+# }
+
 function up() {
 
   #############################
@@ -197,7 +233,7 @@ function up() {
   # 
 
   # -- create the "local path" folders for the PersistentVolume resources
-  for VOLUME in world backups; do 
+  for VOLUME in world backups log; do 
     echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
     target_platform_cmd "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
     target_platform_cmd "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
@@ -293,11 +329,11 @@ function up() {
     fi 
 
     echo "Creating ${PATH_TO_LEVELNAME_FILE}"
-    target_platform_cmd "sudo touch \"${PATH_TO_LEVELNAME_FILE}\""
+    target_platform_cmd "sudo touch ${PATH_TO_LEVELNAME_FILE}"
     echo "Permissioning ${PATH_TO_LEVELNAME_FILE}"
-    target_platform_cmd "sudo chmod 664 \"${PATH_TO_LEVELNAME_FILE}\""
+    target_platform_cmd "sudo chmod 664 ${PATH_TO_LEVELNAME_FILE}"
     echo "Writing level name to ${PATH_TO_LEVELNAME_FILE}"
-    target_platform_cmd "echo -n \"${WORLD_NAME_TO_WRITE}\" > \"${PATH_TO_LEVELNAME_FILE}\""
+    target_platform_cmd "echo -n ${WORLD_NAME_TO_WRITE} > ${PATH_TO_LEVELNAME_FILE}"
   else 
     echo "No expected convergence of state was observed (FORCE_WORLD_DATA_WRITE=${FORCE_WORLD_DATA_WRITE} WORLD_DATA_PRESENT=${WORLD_DATA_PRESENT} FOUND_WORLD=${FOUND_WORLD} WORLD_NAME=${WORLD_NAME})"
   fi 
@@ -306,6 +342,8 @@ function up() {
   #
   # environment
   # 
+
+  PATCH_ENVIRONMENT=(VERSION WORLD_NAME GAMEMODE MOTD)
 
   if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
 
@@ -317,10 +355,20 @@ function up() {
       kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"JAVA_CONF\": \"-Dlog4j2.configurationFile=patch/log4j2112116.xml\"}}"
     fi 
 
-    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"VERSION\": \"${VERSION}\"}}"
-    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"WORLD_NAME\": \"${WORLD_NAME}\"}}"
-    kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"GAMEMODE\": \"${GAMEMODE}\"}}"
+    for PATCH_ENV in ${PATCH_ENVIRONMENT[@]}; do 
+      kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"${PATCH_ENV}\": \"${!PATCH_ENV}\"}}"
+    done 
+
+    # kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"VERSION\": \"${VERSION}\"}}"
+    # kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"WORLD_NAME\": \"${WORLD_NAME}\"}}"
+    # kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"GAMEMODE\": \"${GAMEMODE}\"}}"
+    # kubectl patch configmap ${IMAGE}-${VERSION} --patch "{\"data\": {\"MOTD\": \"${MOTD}\"}}"
   
+  elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+
+    echo "Please modify docker-compose.yml to include the following as `environment`:"
+    echo "    - ${PATCH_ENV}=\${${PATCH_ENV}}"
+    
   fi 
 
   #############################3
@@ -373,21 +421,10 @@ function up() {
   # pull and prune backups
   # 
 
-  [[ ! -d ${PWD}/backups/${VERSION} ]] && mkdir -pv ${PWD}/backups/${VERSION}  
-  CRONTAB_TITLE="${IMAGE}-${VERSION} minikube world volume backup"
-
-  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
-
-    echo "Removing and re-adding crontab: ${CRONTAB_TITLE}"
-    # crontab -l | awk "/^# ${CRONTAB_TITLE}$/{c=2;next} !(c&&c--)" | crontab -  
-    crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
-
-    printf "$(crontab -l) \n\
-# ${CRONTAB_TITLE} \n\
-#*/15 * * * * docker cp \"minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\" \"${PWD}/backups/${VERSION}/\" \n\
-" | crontab -
-
-  fi 
+  [[ ! -d ${PWD}/backups/${VERSION}/${WORLD_NAME} ]] && mkdir -pv ${PWD}/backups/${VERSION}/${WORLD_NAME}
+  
+  clear_crontab_backup
+  add_crontab_backup  
 
 }
 
@@ -398,21 +435,36 @@ function down() {
   # deployment cleanup 
   # 
 
-  echo "Deleting configmap.."
-  cat templates/minecraft_env.yaml | envsubst | kubectl delete -f - || echo "Env delete failed"
-  echo "Deleting volumes, deployment, and services.."
-  cat templates/minecraft.yaml | envsubst | kubectl delete -f - || echo "Deployment delete failed"
+  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+
+    echo "Deleting configmap.."
+    cat templates/minecraft_env.yaml | envsubst | kubectl delete -f - || echo "Env delete failed"
+    echo "Deleting volumes, deployment, and services.."
+    cat templates/minecraft.yaml | envsubst | kubectl delete -f - || echo "Deployment delete failed"
   
+  elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+
+    docker-compose down 
+
+  fi 
+
   #############################3
   #
   # backup cron cleanup
   # 
 
-  CRONTAB_TITLE="${IMAGE}-${VERSION} minikube world volume backup"
-  crontab -l | awk "/${CRONTAB_TITLE}/{c=2;next} !(c&&c--)" | crontab -  
+  clear_crontab_backup
   
-  echo "Copying the last of the backups from ${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}.."
-  docker cp "minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
+  echo "Copying the last of the backups:"
+  echo "${BACKUP_CP_CMD} --> ${PWD}/backups/${VERSION}"
+
+  ${BACKUP_CP_CMD} "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
+  # docker cp "minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
+}
+
+function list() {
+
+  docker-compose ps 
 }
 
 for VERSION in ${VERSION_ARRAY[@]}; do 
@@ -426,6 +478,8 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   export WORLD_NAME=$(version_parameter world_name)
   export GAMEMODE=$(version_parameter gamemode)
   export TARGET_PLATFORM=$(version_parameter target_platform)
+  export CRONTAB_TITLE="${IMAGE}-${VERSION} ${TARGET_PLATFORM} world volume backup"
+  export MOTD="${WORLD_NAME} (${VERSION})"
 
   # export WORLD_NAME=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .world_name")
   # export GAMEMODE=$(cat .jenv | jq -r ".worlds | .[] | select(.version == \"${VERSION}\") | .gamemode")
@@ -455,6 +509,12 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   fi 
 
   export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
+
+  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+    export BACKUP_CP_CMD="docker cp \"minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""  
+  elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
+    export BACKUP_CP_CMD="cp -anv \"${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""
+  fi
 
   if [[ "${ACTION}" = "up" ]]; then 
     up

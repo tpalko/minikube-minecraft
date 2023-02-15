@@ -8,6 +8,7 @@ services:
       - VERSION=${VERSION}
       - WORLD_NAME=${WORLD_NAME}
       - GAMEMODE=${GAMEMODE}
+      - MOTD=${MOTD}
     restart: always
     volumes:
       - ${PWD}/live/volumes-${VERSION}/world:/opt/minecraft/server/${WORLD_NAME}

@@ -14,6 +14,7 @@ export ENTRIES=(
   allow-cheats=${ALLOW_CHEATS}
   allow-flight=${ALLOW_FLIGHT}
   gamemode=${GAMEMODE}
+  motd=${MOTD}
   keep-inventory=${KEEP_INVENTORY}
   level-name=${WORLD_NAME}
   server-ip=0.0.0.0
