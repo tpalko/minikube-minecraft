@@ -2,16 +2,14 @@
 
 echo "Welcome to backup.sh!"
 
-set -e 
+# set -e 
 
 # -- WORLD_NAME originates from an .env file which must double-quote values with spaces 
 # -- in the pod, .env is represented by a ConfigMap, which again wraps values in double quotes
 # -- and so the original double quotes become part of the value, not functional encapsulating syntax 
 export WORLD_NAME=$(echo ${WORLD_NAME} | sed "s/\"//g")
 
-BACKUPS_WORLD_FOLDER="/opt/minecraft/backups/${WORLD_NAME}"
-echo "Creating ${BACKUPS_WORLD_FOLDER}.."
-mkdir -p "${BACKUPS_WORLD_FOLDER}"
+BACKUPS_WORLD_FOLDER=${BACKUPS_WORLD_FOLDER:="/opt/minecraft/backups/${WORLD_NAME}"}
 
 BACKUP_PERIOD_MIN_DEFAULT=15
 BACKUP_PERIOD_MIN=${BACKUP_PERIOD_MIN:=${BACKUP_PERIOD_MIN_DEFAULT}}
@@ -27,7 +25,13 @@ function rcon {
 
 function work_folder_for_archive() {
   ARCHIVE="$1"
-  [[ ${ARCHIVE} =~ [\.\]?/(.+)".tar.gz" ]] && echo ${BASH_REMATCH[1]}
+  [[ ${ARCHIVE} =~ [\.\]?/(.+)".tar.gz" ]] && echo ${TMP_FOLDER}/${BASH_REMATCH[1]}
+}
+
+function compare_folders() {
+  FIRST_FOLDER="$1"
+  SECOND_FOLDER="$2"
+  FOLDER_DIFF=$(diff -r "${FIRST_FOLDER}" "${SECOND_FOLDER}")  
 }
 
 function compare_json_files() {
@@ -77,25 +81,32 @@ function compare_files() {
 function expand_to_temp() {
   BACKUPFILE="$1"  
   WORK_FOLDER="$2"
-  echo "Expanding ${BACKUPFILE} to ${TMP_FOLDER}/${WORK_FOLDER}"
-  echo "Creating work folder ${TMP_FOLDER}/${WORK_FOLDER}"
-  mkdir -vp ${TMP_FOLDER}/${WORK_FOLDER}
-  echo "Expanding ${BACKUPFILE}"  
-  tar --skip-old-files -xzvf ${BACKUPFILE} -C ${TMP_FOLDER}/${WORK_FOLDER} --strip-components 4
+  echo "Expanding ${BACKUPFILE} to ${WORK_FOLDER}"
+  echo "Creating work folder ${WORK_FOLDER}"
+  mkdir -vp ${WORK_FOLDER}
+  echo "${BACKUPFILE}:"  
+  tar --skip-old-files -xzvf ${BACKUPFILE} -C ${WORK_FOLDER} --strip-components 4
 }
 
 function cleanup_temp() {
   WORK_FOLDER="$1"
-  echo "Cleaning up work folder ${TMP_FOLDER}/${WORK_FOLDER}"
-  rm -rvf ${TMP_FOLDER}/${WORK_FOLDER}      
+  echo "Cleaning up work folder ${WORK_FOLDER}"
+  rm -rvf ${WORK_FOLDER}      
+}
+
+function prune_log() {
+  MSG="$1"
+  echo "${MSG}" | tee -a ${PRUNE_LOG}
 }
 
 function prune_backups() {
 
-  echo "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
-  echo "-=- "
-  echo "-=-       Pruning starting $(date)"
-  echo "-=- "
+  PRUNE_LOG=/opt/minecraft/log/prune_$(date +%F-%H-%M).log
+
+  prune_log "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+  prune_log "-=- "
+  prune_log "-=-       Pruning starting $(date)"
+  prune_log "-=- "
 
   pushd ${BACKUPS_WORLD_FOLDER}
 
@@ -113,19 +124,24 @@ function prune_backups() {
   while :; do 
 
     # -- investigation 
-
+    
     ALL_BACKUPS=$(find . -type f -name "*.tar.gz" | grep -vE "broken|pruned" | sort -n)
     BACKUP_COUNT=$(echo "${ALL_BACKUPS}" | wc -l)
-    echo "Found ${BACKUP_COUNT} total backups"
-    echo "Taking two off the end of the first ${TAKE}"
+
+    prune_log "    /./././././././././\.\.\.\.\.\.\.\.\.\.\  "
+    prune_log "    /.                                    .\  "
+    prune_log "    /.  ${BACKUP_COUNT} total backups"
+    prune_log "    /.                                 "
+    prune_log "    /.       last two of ${TAKE}       "
+    prune_log "    /.                                 "
 
     if [[ ${BACKUP_COUNT} -lt 2 ]]; then 
-      echo "Not enough backups to compare (${BACKUP_COUNT}), quitting"
+      prune_log "Not enough backups to compare (${BACKUP_COUNT}), quitting"
       break 
     fi 
 
     if [[ ${TAKE} -gt ${BACKUP_COUNT} ]]; then 
-      echo "We're at the end of the list, quitting"
+      prune_log "We're at the end of the list, quitting"
       break 
     fi 
     
@@ -135,12 +151,12 @@ function prune_backups() {
     FIRST=$(echo "${TWO_EARLIEST}" | head -n 1)
     SECOND=$(echo "${TWO_EARLIEST}" | tail -n 1)
 
-    echo "Selected the next two for comparison:"
-    echo "First:  ${FIRST}"
-    echo "Second: ${SECOND}"
+    prune_log "Selected the next two for comparison:"
+    prune_log "First:  ${FIRST}"
+    prune_log "Second: ${SECOND}"
 
     if [[ "${FIRST}" = "${SECOND}" ]]; then 
-      echo "The two files to compare look the same.. we can probably stop now"
+      prune_log "The two files to compare look the same.. we can probably stop now"
       break 
     fi 
 
@@ -150,49 +166,82 @@ function prune_backups() {
     SECOND_WORK_FOLDER=$(work_folder_for_archive "${SECOND}")
 
     expand_to_temp "${FIRST}" "${FIRST_WORK_FOLDER}" \
-      || (cleanup_temp "${FIRST_WORK_FOLDER}" && mv "${FIRST}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
+      || (prune_log "Ooops! What happened?" && cleanup_temp "${FIRST_WORK_FOLDER}" && mv -nv "${FIRST}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
 
     expand_to_temp "${SECOND}" "${SECOND_WORK_FOLDER}" \
-      || (cleanup_temp "${FIRST_WORK_FOLDER}" && cleanup_temp "${SECOND_WORK_FOLDER}" && mv "${SECOND}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
+      || (prune_log "Ooops! What happened?" && cleanup_temp "${FIRST_WORK_FOLDER}" && cleanup_temp "${SECOND_WORK_FOLDER}" && mv "${SECOND}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
     
-    FIRST_PLAYERDATA=($(find ${TMP_FOLDER}/${FIRST_WORK_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old"))
-    SECOND_PLAYERDATA=($(find ${TMP_FOLDER}/${SECOND_WORK_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old"))
-    FIRST_STATS=($(find ${TMP_FOLDER}/${FIRST_WORK_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|json\.json"))
-    SECOND_STATS=($(find ${TMP_FOLDER}/${SECOND_WORK_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|json\.json"))
+    PLAYERDATA_FOLDER_DIFF=$(diff -rwa "${FIRST_WORK_FOLDER}/playerdata" "${SECOND_WORK_FOLDER}/playerdata" 2>&1)
+    PLAYERDATA_FOLDER_DIFF_CODE=$?
+    STATS_FOLDER_DIFF=$(diff -rwa "${FIRST_WORK_FOLDER}/stats" "${SECOND_WORK_FOLDER}/stats" 2>&1)
+    STATS_FOLDER_DIFF_CODE=$?
 
-    if [[ ${#FIRST_PLAYERDATA[@]} -gt 1 \
-          || ${#SECOND_PLAYERDATA[@]} -gt 1 \
-          || ${#FIRST_STATS[@]} -gt 1 \
-          || ${#SECOND_STATS[@]} -gt 1 ]]; then 
+    if [[ ${PLAYERDATA_FOLDER_DIFF_CODE} -eq 0 && ${STATS_FOLDER_DIFF_CODE} -eq 0 ]]; then 
+    
+      prune_log "All playerdata and stats files are identical"
+      mv -nv ${SECOND} ${BACKUPS_WORLD_FOLDER}/pruned  
 
-      echo "File selection picked up more than one file, comparison would be invalid"
-      echo ""
-      echo "FIRST_PLAYERDATA -->"
-      echo "${FIRST_PLAYERDATA[@]}"
-      echo ""
-      echo "SECOND_PLAYERDATA -->"
-      echo "${SECOND_PLAYERDATA[@]}"
-      echo ""
-      echo "FIRST_STATS -->"
-      echo "${FIRST_STATS[@]}"
-      echo ""
-      echo "SECOND_STATS -->"
-      echo "${SECOND_STATS[@]}"
-      echo ""
+    else 
 
-      break 
+      if [[ ${PLAYERDATA_FOLDER_DIFF_CODE} -lt 2 && ${STATS_FOLDER_DIFF_CODE} -lt 2 ]]; then 
+        prune_log "Some difference in playerdata or stats files"        
+      else 
+        prune_log "Errors occurred comparing playerdata (${PLAYERDATA_FOLDER_DIFF_CODE}) or stats (${STATS_FOLDER_DIFF_CODE}) files"
+      fi 
+
+      echo "playerdata:"
+      echo " v v v v v "
+      echo "${PLAYERDATA_FOLDER_DIFF}"
+      echo " ^ ^ ^ ^ ^ "
+      echo "stats:"
+      echo " v v v v v "
+      echo "${STATS_FOLDER_DIFF}"
+      echo " ^ ^ ^ ^ ^ "      
+
+      TAKE=$(( ${TAKE} + 1 ))
+
     fi 
+
+    # -- SECOND ATTEMPT: get presumed single playerdata/stats file in each backup and compare each set 
+    # FIRST_PLAYERDATA=($(find ${TMP_FOLDER}/${FIRST_WORK_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old"))
+    # SECOND_PLAYERDATA=($(find ${TMP_FOLDER}/${SECOND_WORK_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old"))
+    # FIRST_STATS=($(find ${TMP_FOLDER}/${FIRST_WORK_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|json\.json"))
+    # SECOND_STATS=($(find ${TMP_FOLDER}/${SECOND_WORK_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|json\.json"))
+
+    # if [[ ${#FIRST_PLAYERDATA[@]} -gt 1 \
+    #       || ${#SECOND_PLAYERDATA[@]} -gt 1 \
+    #       || ${#FIRST_STATS[@]} -gt 1 \
+    #       || ${#SECOND_STATS[@]} -gt 1 ]]; then 
+
+    #   echo "File selection picked up more than one file, comparison would be invalid"
+    #   echo ""
+    #   echo "FIRST_PLAYERDATA -->"
+    #   echo "${FIRST_PLAYERDATA[@]}"
+    #   echo ""
+    #   echo "SECOND_PLAYERDATA -->"
+    #   echo "${SECOND_PLAYERDATA[@]}"
+    #   echo ""
+    #   echo "FIRST_STATS -->"
+    #   echo "${FIRST_STATS[@]}"
+    #   echo ""
+    #   echo "SECOND_STATS -->"
+    #   echo "${SECOND_STATS[@]}"
+    #   echo ""
+
+    #   break 
+    # fi 
     
-    FIRST_PLAYERDATA=${FIRST_PLAYERDATA[0]}
-    SECOND_PLAYERDATA=${SECOND_PLAYERDATA[0]}
-    FIRST_STATS=${FIRST_STATS[0]}
-    SECOND_STATS=${SECOND_STATS[0]}
+    # FIRST_PLAYERDATA=${FIRST_PLAYERDATA[0]}
+    # SECOND_PLAYERDATA=${SECOND_PLAYERDATA[0]}
+    # FIRST_STATS=${FIRST_STATS[0]}
+    # SECOND_STATS=${SECOND_STATS[0]}
 
-    echo "FIRST_PLAYERDATA -->  ${FIRST_PLAYERDATA}"
-    echo "SECOND_PLAYERDATA --> ${SECOND_PLAYERDATA}"
-    echo "FIRST_STATS -->       ${FIRST_STATS}"
-    echo "SECOND_STATS -->      ${SECOND_STATS}"
+    # echo "FIRST_PLAYERDATA -->  ${FIRST_PLAYERDATA}"
+    # echo "SECOND_PLAYERDATA --> ${SECOND_PLAYERDATA}"
+    # echo "FIRST_STATS -->       ${FIRST_STATS}"
+    # echo "SECOND_STATS -->      ${SECOND_STATS}"
 
+    # -- FIRST ATTEMPT: compare total and distinct counts, reducing by unique hashed contents, what?
     # PLAYERDATA_FILES=$(find ${TMP_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old|pruned|broken")
     # STATS_FILES=$(find ${TMP_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|pruned|broken")
 
@@ -207,21 +256,23 @@ function prune_backups() {
 
     # -- test 
 
-    DIFF=0 
+    # -- FIRST ATTEMPT IMPROVEMENT: tighten up comparison logic
+    # DIFF=0 
 
-    compare_files "${FIRST_PLAYERDATA}" "${SECOND_PLAYERDATA}"
-    compare_files "${FIRST_STATS}" "${SECOND_STATS}"
-    JSONDIFF=
-    compare_json_files "${FIRST_STATS}" "${SECOND_STATS}"
-    JSONDIFF_RESULT=$?
+    # compare_files "${FIRST_PLAYERDATA}" "${SECOND_PLAYERDATA}"
+    # compare_files "${FIRST_STATS}" "${SECOND_STATS}"
+    # JSONDIFF=
+    # compare_json_files "${FIRST_STATS}" "${SECOND_STATS}"
+    # JSONDIFF_RESULT=$?
 
-    if [[ ${JSONDIFF_RESULT} -eq 0 ]]; then 
-      echo "Stats diff:"
-      echo "${JSONDIFF}"
-    else
-      echo "${JSONDIFF}"
-    fi 
+    # if [[ ${JSONDIFF_RESULT} -eq 0 ]]; then 
+    #   echo "Stats diff:"
+    #   echo "${JSONDIFF}"
+    # else
+    #   echo "${JSONDIFF}"
+    # fi 
 
+    # -- FIRST ATTEMPT: original comparison
     # PLAYERDATA_DISTINCTS=
     # STATS_DISTINCTS=
 
@@ -241,14 +292,14 @@ function prune_backups() {
 
     # -- results 
 
-    if [[ ${DIFF} -eq 0 && (${JSONDIFF_RESULT} -eq 0 && -z "${JSONDIFF}") ]]; then 
-      echo "All compared files resulted in no discerable difference -- chucking the second one"
-      mv -nv ${SECOND} ${BACKUPS_WORLD_FOLDER}/pruned  
-    else 
-      echo "Comparing files resulted in some difference -- keeping both "
-      TAKE=$(( ${TAKE} + 1 ))
-      echo "TAKE=${TAKE}"
-    fi 
+    # if [[ ${DIFF} -eq 0 && (${JSONDIFF_RESULT} -eq 0 && -z "${JSONDIFF}") ]]; then 
+    #   echo "All compared files resulted in no discerable difference -- chucking the second one"
+    #   mv -nv ${SECOND} ${BACKUPS_WORLD_FOLDER}/pruned  
+    # else 
+    #   echo "Comparing files resulted in some difference -- keeping both "
+    #   TAKE=$(( ${TAKE} + 1 ))
+    #   echo "TAKE=${TAKE}"
+    # fi 
 
     # echo "PLAYERDATA_DISTINCTS=${PLAYERDATA_DISTINCTS}"
     # echo "STATS_DISTINCTS=${STATS_DISTINCTS}"
@@ -285,20 +336,20 @@ function prune_backups() {
 
     # -- cleanup 
 
-    echo "Cleaning up ${FIRST}"
+    prune_log "Cleaning up ${FIRST}"
     cleanup_temp "${FIRST_WORK_FOLDER}"
 
-    echo "Cleaning up ${SECOND}"
+    prune_log "Cleaning up ${SECOND}"
     cleanup_temp "${SECOND_WORK_FOLDER}"
         
   done
 
   popd 
   
-  echo "-=- "
-  echo "-=-       Pruning finished $(date)"
-  echo "-=- "
-  echo "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+  prune_log "-=- "
+  prune_log "-=-       Pruning finished $(date)"
+  prune_log "-=- "
+  prune_log "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
 
 }
 
@@ -308,6 +359,8 @@ function backup() {
   echo "-=- "
   echo "-=-       Backup starting $(date)"
   echo "-=- "
+
+  [[ -d "${BACKUPS_WORLD_FOLDER}" ]] || (echo "Creating ${BACKUPS_WORLD_FOLDER}.." && mkdir -p "${BACKUPS_WORLD_FOLDER}")
 
   rcon "save-off"
   rcon "save-all"

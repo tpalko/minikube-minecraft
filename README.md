@@ -41,7 +41,9 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
 ### Development 
 
+* on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand
 * extract backup pruning to work independently
+* proper multiplayer world backup de-duping (multiple playerdata/stats files)
 * handle minikube + docker deployments together without ports clashing (globally incrementing)
 * comprehensive status page - what is deployed where + connection details, including proxy status
 * Makefile 

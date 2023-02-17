@@ -3,11 +3,16 @@
 set -e 
 
 SPECVERSION=
+BUILD_CONTEXT_DEFAULT=minikube 
+BUILD_CONTEXT=${BUILD_CONTEXT:=${BUILD_CONTEXT_DEFAULT}}
 
 while [[ $# -gt 0 ]]; do 
   case $1 in 
     -v)     SPECVERSION=$2
             shift; shift 
+            ;;
+    -c)     BUILD_CONTEXT=$2
+            shift; shift
             ;;
       *)    echo "Ignoring $1"
             shift 
@@ -29,7 +34,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
 
   echo "Building ${IMAGE}:${VERSION} from ${HASH} into ${TARGET_PLATFORM}"  
 
-  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+  if [[ "${TARGET_PLATFORM}" = "minikube" && "${BUILD_CONTEXT}" = "minikube" ]]; then 
     echo "Entering minikube environment (TARGET_PLATFORM=${TARGET_PLATFORM})"
     . ../scripts/minikube-env.sh
   else 
@@ -42,7 +47,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
 
   docker build $@ -t ${IMAGE}:${VERSION} --build-arg HASH=${HASH} . 
 
-  if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
+  if [[ "${TARGET_PLATFORM}" = "minikube" && "${BUILD_CONTEXT}" = "minikube" ]]; then 
     . ../scripts/minikube-env-deactivate.sh
   fi 
   

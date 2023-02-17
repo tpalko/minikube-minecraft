@@ -81,8 +81,8 @@ if [[ -n "${SPEC_BACKUP_FILE}" && -z "${SPEC_WORLD_NAME}" ]]; then
   exit 1
 fi 
 
-if [[ ("${SPEC_BACKUP_FILE}" =~ .*\.tar\.gz && ! -f "${SPEC_BACKUP_FILE}") \
-  || ! -d ${SPEC_BACKUP_FILE} ]]; then 
+if [[ -n "${SPEC_BACKUP_FILE}" && (("${SPEC_BACKUP_FILE}" =~ .*\.tar\.gz && ! -f "${SPEC_BACKUP_FILE}") \
+  || ! -d ${SPEC_BACKUP_FILE}) ]]; then 
 
   echo "${SPEC_BACKUP_FILE} doesn't exist"
   exit 1
@@ -99,6 +99,11 @@ if [[ -n "${SPEC_VERSION}" ]]; then
 else 
   echo "Performing on all versions"
 fi 
+
+function _create_load_folder() {
+  local WORK_FOLDER=_tmp_deploy_load_$(date +%Y%m%dT%H%M%S)
+  mkdir -p ${WORK_FOLDER} 2>&1 > /dev/null && echo ${WORK_FOLDER}
+}
 
 function load() {
 
@@ -127,8 +132,7 @@ function load() {
     echo "No world data found in ${VERSIONED_WORLD_PATH}, we're clear to deploy."
   fi 
   
-  WORK_FOLDER=_tmp_deploy_load_$(date +%Y%m%dT%H%M%S)
-  mkdir -p ${WORK_FOLDER} 
+  WORK_FOLDER=$(_create_load_folder) || return 
 
   # -- the following if we have a backup file tar.gz 
   if [[ "${BACKUP_FILE}" =~ tar.gz ]]; then 
@@ -193,16 +197,17 @@ function load() {
 
 function clear_crontab_backup() {
 
-  echo "Removing and re-adding crontab: ${CRONTAB_TITLE}"
+  echo "Removing crontab: ${CRONTAB_TITLE}"
   # crontab -l | awk "/^# ${CRONTAB_TITLE}$/{c=2;next} !(c&&c--)" | crontab -  
   crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
 }
 
 function add_crontab_backup() {
-  
+
+  echo "Adding crontab: ${CRONTAB_TITLE}"
   printf "$(crontab -l) \n\
 # ${CRONTAB_TITLE} \n\
-#*/15 * * * * ${BACKUP_CP_CMD} \"${PWD}/backups/${VERSION}/\" \n\
+*/15 * * * * ${BACKUP_CP_CMD} \"${PWD}/backups/${VERSION}/\" \n\
 " | crontab -
 
 }
@@ -460,7 +465,7 @@ function down() {
   echo "Copying the last of the backups:"
   echo "${BACKUP_CP_CMD} --> ${PWD}/backups/${VERSION}"
 
-  ${BACKUP_CP_CMD} "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
+  ${BACKUP_CP_CMD} ${PWD}/backups/${VERSION}/ || echo "Last backup copy failed"
   # docker cp "minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
 }
 
@@ -516,7 +521,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
 
   if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
-    export BACKUP_CP_CMD="docker cp \"minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""  
+    export BACKUP_CP_CMD="docker cp minikube:\"${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""
   elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
     export BACKUP_CP_CMD="cp -anv \"${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""
   fi
