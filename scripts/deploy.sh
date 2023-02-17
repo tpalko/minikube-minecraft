@@ -510,7 +510,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
 
   echo "Using world name: ${WORLD_NAME}"
   
-  export MOTD="${WORLD_NAME} (${VERSION})"
+  export MOTD="${WORLD_NAME}-${VERSION}"
   # -- change dots to hyphens for k8s standard domain naming, apparently only a problem for Service 
   export VERSION_HYPHEN=${VERSION//./-}
   
