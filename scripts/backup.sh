@@ -13,6 +13,10 @@ BACKUPS_WORLD_FOLDER=${BACKUPS_WORLD_FOLDER:="/opt/minecraft/backups/${WORLD_NAM
 
 BACKUP_PERIOD_MIN_DEFAULT=15
 BACKUP_PERIOD_MIN=${BACKUP_PERIOD_MIN:=${BACKUP_PERIOD_MIN_DEFAULT}}
+TMP_FOLDER=_tmp 
+PRUNE_DIFF_CURSOR_FILE=.prune-diff-cursor
+BACKUP_RETENTION_WINDOW=1
+BACKUP_EXPIRATION_DAYS=7
 
 function rcon {
   if [[ -f /opt/minecraft/tools/mcrcon/mcrcon ]]; then 
@@ -26,32 +30,6 @@ function rcon {
 function work_folder_for_archive() {
   ARCHIVE="$1"
   [[ ${ARCHIVE} =~ [\.\]?/(.+)".tar.gz" ]] && echo ${TMP_FOLDER}/${BASH_REMATCH[1]}
-}
-
-function compare_folders() {
-  FIRST_FOLDER="$1"
-  SECOND_FOLDER="$2"
-  FOLDER_DIFF=$(diff -r "${FIRST_FOLDER}" "${SECOND_FOLDER}")  
-}
-
-function compare_json_files() {
-  FIRST_FILE="$1"
-  SECOND_FILE="$2"
-  echo "Comparing JSON"
-  echo "${FIRST_FILE}"
-  echo "${SECOND_FILE}"
-  echo "Parsing ${FIRST_FILE} to JSON.."
-  cat "${FIRST_FILE}" | jq > ${FIRST_FILE}.json
-  PARSE_CODE=$?
-  [[ ${PARSE_CODE} -ne 0 ]] && echo "Parsing ${FIRST_FILE} to JSON failed (${PARSE_CODE})" && return ${PARSE_CODE} 
-  echo "Parsing ${SECOND_FILE} to JSON.."
-  cat "${SECOND_FILE}" | jq > ${SECOND_FILE}.json
-  PARSE_CODE=$?
-  [[ ${PARSE_CODE} -ne 0 ]] && echo "Parsing ${SECOND_FILE} to JSON failed (${PARSE_CODE})" && return ${PARSE_CODE} 
-  [[ ! -f "${FIRST_FILE}.json" || ! -f "${SECOND_FILE}.json" ]] && echo "Both formatted JSON files are not present" && return 1
-  echo "Performing diff.."
-  JSONDIFF=$(diff -w "${FIRST_FILE}.json" "${SECOND_FILE}.json" || echo "ok")
-  echo "JSON diff calculated"
 }
 
 function compare_files() {
@@ -134,37 +112,21 @@ function json_diff_stats_folder() {
   done < <(find ${FIRST_WORK_FOLDER}/stats/*.json)
 }
 
-function prune_backups() {
+function prune_duplicates() {
 
-  PRUNE_LOG=/opt/minecraft/log/prune_$(date +%F-%H-%M).log
-
-  prune_log "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
-  prune_log "-=- "
-  prune_log "-=-       Pruning starting $(date)"
-  prune_log "-=- "
-
-  pushd ${BACKUPS_WORLD_FOLDER}
-
-  # echo "Deleting older backups.."
-  # for OLD in $(find . -type f -mtime +3 -name '*.gz'); do 
-  #   rm -v ${OLD}
-  # done 
-
-  mkdir -p ${BACKUPS_WORLD_FOLDER}/{pruned,broken,expired}  
-
-  TMP_FOLDER=_tmp 
-  # TAKE=2
-  
   while :; do 
 
     # -- investigation 
     
     NEWER=
     LATER_THAN_FILE=
-    if [[ -f  ]]; then 
-      LATER_THAN_FILE=$(cat )
+    if [[ -f ${PRUNE_DIFF_CURSOR_FILE} ]]; then 
+      LATER_THAN_FILE=$(cat ${PRUNE_DIFF_CURSOR_FILE})
       if [[ -f ${LATER_THAN_FILE} ]]; then 
         NEWER=" -newer ${LATER_THAN_FILE} "
+      else 
+        echo "Later-than file ${LATER_THAN_FILE} does not exist!"
+        unset LATER_THAN_FILE
       fi 
     fi     
 
@@ -184,11 +146,6 @@ function prune_backups() {
       break 
     fi 
 
-    #if [[ ${TAKE} -gt ${BACKUP_COUNT} ]]; then 
-    #  prune_log "We're at the end of the list, quitting"
-    #  break 
-    #fi 
-    
     # -- selection 
 
     TWO_EARLIEST=$(echo "${ALL_BACKUPS}" | head -n 2)
@@ -250,142 +207,8 @@ function prune_backups() {
         prune_log "Stats diff is 0"
       fi 
 
-      # TAKE=$(( ${TAKE} + 1 ))
-
-      echo -n ${FIRST} > 
+      echo -n ${FIRST} > ${PRUNE_DIFF_CURSOR_FILE}
     fi 
-
-    # -- SECOND ATTEMPT: get presumed single playerdata/stats file in each backup and compare each set 
-    # FIRST_PLAYERDATA=($(find ${TMP_FOLDER}/${FIRST_WORK_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old"))
-    # SECOND_PLAYERDATA=($(find ${TMP_FOLDER}/${SECOND_WORK_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old"))
-    # FIRST_STATS=($(find ${TMP_FOLDER}/${FIRST_WORK_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|json\.json"))
-    # SECOND_STATS=($(find ${TMP_FOLDER}/${SECOND_WORK_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|json\.json"))
-
-    # if [[ ${#FIRST_PLAYERDATA[@]} -gt 1 \
-    #       || ${#SECOND_PLAYERDATA[@]} -gt 1 \
-    #       || ${#FIRST_STATS[@]} -gt 1 \
-    #       || ${#SECOND_STATS[@]} -gt 1 ]]; then 
-
-    #   echo "File selection picked up more than one file, comparison would be invalid"
-    #   echo ""
-    #   echo "FIRST_PLAYERDATA -->"
-    #   echo "${FIRST_PLAYERDATA[@]}"
-    #   echo ""
-    #   echo "SECOND_PLAYERDATA -->"
-    #   echo "${SECOND_PLAYERDATA[@]}"
-    #   echo ""
-    #   echo "FIRST_STATS -->"
-    #   echo "${FIRST_STATS[@]}"
-    #   echo ""
-    #   echo "SECOND_STATS -->"
-    #   echo "${SECOND_STATS[@]}"
-    #   echo ""
-
-    #   break 
-    # fi 
-    
-    # FIRST_PLAYERDATA=${FIRST_PLAYERDATA[0]}
-    # SECOND_PLAYERDATA=${SECOND_PLAYERDATA[0]}
-    # FIRST_STATS=${FIRST_STATS[0]}
-    # SECOND_STATS=${SECOND_STATS[0]}
-
-    # echo "FIRST_PLAYERDATA -->  ${FIRST_PLAYERDATA}"
-    # echo "SECOND_PLAYERDATA --> ${SECOND_PLAYERDATA}"
-    # echo "FIRST_STATS -->       ${FIRST_STATS}"
-    # echo "SECOND_STATS -->      ${SECOND_STATS}"
-
-    # -- FIRST ATTEMPT: compare total and distinct counts, reducing by unique hashed contents, what?
-    # PLAYERDATA_FILES=$(find ${TMP_FOLDER} -type f -wholename "*/playerdata/*" | grep -vE "old|pruned|broken")
-    # STATS_FILES=$(find ${TMP_FOLDER} -type f -wholename "*/stats/*" | grep -vE "old|pruned|broken")
-
-    # PLAYERDATA_UNDISTINCTS=$(echo "${PLAYERDATA_FILES}" | wc -l)
-    # STATS_UNDISTINCTS=$(echo "${STATS_FILES}" | wc -l)
-
-    # echo "playerdata files (${PLAYERDATA_UNDISTINCTS}):"
-    # echo "${PLAYERDATA_FILES}"
-
-    # echo "stats files (${STATS_UNDISTINCTS}):"
-    # echo "${STATS_FILES}"
-
-    # -- test 
-
-    # -- FIRST ATTEMPT IMPROVEMENT: tighten up comparison logic
-    # DIFF=0 
-
-    # compare_files "${FIRST_PLAYERDATA}" "${SECOND_PLAYERDATA}"
-    # compare_files "${FIRST_STATS}" "${SECOND_STATS}"
-    # JSONDIFF=
-    # compare_json_files "${FIRST_STATS}" "${SECOND_STATS}"
-    # JSONDIFF_RESULT=$?
-
-    # if [[ ${JSONDIFF_RESULT} -eq 0 ]]; then 
-    #   echo "Stats diff:"
-    #   echo "${JSONDIFF}"
-    # else
-    #   echo "${JSONDIFF}"
-    # fi 
-
-    # -- FIRST ATTEMPT: original comparison
-    # PLAYERDATA_DISTINCTS=
-    # STATS_DISTINCTS=
-
-    # -- only if the total number of files is exactly 2 do we bother doing a comparison
-
-    # if [[ ${PLAYERDATA_UNDISTINCTS} -ne 2 || ${STATS_UNDISTINCTS} -ne 2 ]]; then 
-    #   echo "We don't have exactly two each playerdata and stats files.. something is wrong"
-    # fi 
-
-    # if [[ ${PLAYERDATA_UNDISTINCTS} -eq 2 ]]; then 
-    #   PLAYERDATA_DISTINCTS=$(echo "${PLAYERDATA_FILES}" | xargs shasum | awk '{ print $1 }' | uniq | wc -l)
-    # fi 
-
-    # if [[ ${STATS_UNDISTINCTS} -eq 2 ]]; then 
-    #   STATS_DISTINCTS=$(echo "${STATS_FILES}" | xargs shasum | awk '{ print $1 }' | uniq | wc -l)
-    # fi
-
-    # -- results 
-
-    # if [[ ${DIFF} -eq 0 && (${JSONDIFF_RESULT} -eq 0 && -z "${JSONDIFF}") ]]; then 
-    #   echo "All compared files resulted in no discerable difference -- chucking the second one"
-    #   mv -nv ${SECOND} ${BACKUPS_WORLD_FOLDER}/pruned  
-    # else 
-    #   echo "Comparing files resulted in some difference -- keeping both "
-    #   TAKE=$(( ${TAKE} + 1 ))
-    #   echo "TAKE=${TAKE}"
-    # fi 
-
-    # echo "PLAYERDATA_DISTINCTS=${PLAYERDATA_DISTINCTS}"
-    # echo "STATS_DISTINCTS=${STATS_DISTINCTS}"
-
-    # if [[ -z "${PLAYERDATA_DISTINCTS}" || -z "${STATS_DISTINCTS}" ]]; then 
-    #   echo "One or more distinct counts could not be determined."
-    #   echo "Quitting for everybody's safety"
-    #   QUIT=1
-    # fi 
-
-    # if [[ (${PLAYERDATA_UNDISTINCTS} -eq ${PLAYERDATA_DISTINCTS}) \
-    #   && (${STATS_UNDISTINCTS} -eq ${STATS_DISTINCTS}) ]]; then 
-
-    #     echo "Playerdata in ${FIRST} differs from playerdata in ${SECOND}"
-    #     echo "AND"
-    #     echo "Stats in ${FIRST} differs from stats in ${SECOND}"      
-    #     echo "Let's keep both, and move onto the next two.."  
-        
-
-    # elif [[ (${PLAYERDATA_UNDISTINCTS} -eq 2 && ${PLAYERDATA_DISTINCTS} -eq 1) \
-    #   && (${STATS_UNDISTINCTS} -eq 2 && ${STATS_DISTINCTS} -eq 1) ]]; then 
-
-    #   echo "There are 2 playerdata and stats files each.. and they look the same.."
-    #   echo "We can safely remove ${SECOND}.. it is redundant"
-      
-    
-    # else 
-
-    #   echo "Playerdata or stats counts were unexpected.. or were not found.."      
-    #   echo "Quitting for everybody's safety"
-    #   QUIT=1
-      
-    # fi  
 
     # -- cleanup 
 
@@ -396,13 +219,9 @@ function prune_backups() {
     cleanup_temp "${SECOND_WORK_FOLDER}"
 
   done
+}
 
-  prune_log "Cleaning out pruned folder.."
-  rm -vf ${BACKUPS_WORLD_FOLDER}/pruned/*
-
-  BACKUP_RETENTION_WINDOW=1
-  BACKUP_EXPIRATION_DAYS=7
-
+function prune_expired() {
   while :; do 
     BACKUPS_IN_WINDOW=$(find . -mtime -${BACKUP_RETENTION_WINDOW} -wholename "./*.tar.gz" | wc -l)  
     echo "Backup retention window: ${BACKUP_RETENTION_WINDOW} -- Backups: ${BACKUPS_IN_WINDOW}"
@@ -423,6 +242,27 @@ function prune_backups() {
     fi 
     BACKUP_RETENTION_WINDOW=$(( ${BACKUP_RETENTION_WINDOW} + 1 ))
   done 
+}
+
+function prune_backups() {
+
+  PRUNE_LOG=/opt/minecraft/log/prune_${RUN_TIMESTAMP}.log
+  
+  prune_log "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+  prune_log "-=- "
+  prune_log "-=-       Pruning starting $(date)"
+  prune_log "-=- "
+
+  pushd ${BACKUPS_WORLD_FOLDER}
+
+  mkdir -p ${BACKUPS_WORLD_FOLDER}/{pruned,broken,expired}  
+  
+  prune_duplicates
+
+  prune_log "Cleaning out pruned folder.."
+  rm -vf ${BACKUPS_WORLD_FOLDER}/pruned/*
+
+  prune_expired
   
   prune_log "Cleaning out expired folder.."
   rm -vf ${BACKUPS_WORLD_FOLDER}/expired/*
@@ -447,7 +287,7 @@ function backup() {
 
   rcon "save-off"
   rcon "save-all"
-  tar -cvpzf "${BACKUPS_WORLD_FOLDER}/${WORLD_NAME}-world-${VERSION}-$(date +%F-%H-%M).tar.gz" "${WORLD_BASE}/${WORLD_NAME}"
+  tar -cvpzf "${BACKUPS_WORLD_FOLDER}/${WORLD_NAME}-world-${VERSION}-${RUN_TIMESTAMP}.tar.gz" "${WORLD_BASE}/${WORLD_NAME}"
   rcon "save-on"
 
   echo "-=- "
@@ -463,6 +303,7 @@ function schedule_backup() {
   (while :; do     
     sleep $(( 60*${BACKUP_PERIOD_MIN} )) \
       && touch /opt/minecraft/log/backup.lock \
+      && export RUN_TIMESTAMP=$(date +%F-%H-%M) \
       && (backup && prune_backups || echo "OH NO! something failed in the backup..") >> /opt/minecraft/log/backup.log 2>&1 \
       && rm -vf /opt/minecraft/log/backup.lock
   done) &
