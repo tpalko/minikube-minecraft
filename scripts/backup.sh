@@ -99,6 +99,41 @@ function prune_log() {
   echo "${MSG}" | tee -a ${PRUNE_LOG}
 }
 
+function json_diff_stats_folder() {
+
+  FIRST_WORK_FOLDER="$1"
+  SECOND_WORK_FOLDER="$2"
+
+  prune_log "JSON diffing ${FIRST_WORK_FOLDER} -> ${SECOND_WORK_FOLDER}"
+
+  while read STATSFILE; do 
+        
+    STATSFILEBASENAME=$(basename ${STATSFILE})
+    prune_log "Looking for ${STATSFILEBASENAME} in ${SECOND_WORK_FOLDER}"
+    OTHERSTATSFILE=$(find ${SECOND_WORK_FOLDER} -name "${STATSFILEBASENAME}")
+
+    if [[ -n "${OTHERSTATSFILE}" ]]; then           
+      
+      cat ${STATSFILE} | jq > _tmpone.json \
+        && cat ${OTHERSTATSFILE} | jq > _tmptwo.json  \
+        && JSON_DIFF="$(diff -w _tmpone.json _tmptwo.json)" \
+        && (
+          prune_log "${STATSFILEBASENAME} diff ${FIRST_WORK_FOLDER} <-> ${SECOND_WORK_FOLDER}" \
+          && prune_log " v v v v v " \
+          && prune_log "${JSON_DIFF}" \
+          && prune_log " ^ ^ ^ ^ ^ "
+        ) \
+        || prune_log "JSON diff failed"
+
+      rm -vf _tmpone.json _tmptwo.json 
+
+    else 
+      prune_log "${STATSFILE} from ${FIRST_WORK_FOLDER} was not found in ${SECOND_WORK_FOLDER}"
+    fi 
+
+  done < <(find ${FIRST_WORK_FOLDER}/stats/*.json)
+}
+
 function prune_backups() {
 
   PRUNE_LOG=/opt/minecraft/log/prune_$(date +%F-%H-%M).log
@@ -115,24 +150,33 @@ function prune_backups() {
   #   rm -v ${OLD}
   # done 
 
-  mkdir -p ${BACKUPS_WORLD_FOLDER}/pruned 
-  mkdir -p ${BACKUPS_WORLD_FOLDER}/broken 
+  mkdir -p ${BACKUPS_WORLD_FOLDER}/{pruned,broken,expired}  
 
   TMP_FOLDER=_tmp 
-  TAKE=2
+  # TAKE=2
   
   while :; do 
 
     # -- investigation 
     
-    ALL_BACKUPS=$(find . -type f -name "*.tar.gz" | grep -vE "broken|pruned" | sort -n)
+    NEWER=
+    LATER_THAN_FILE=
+    if [[ -f  ]]; then 
+      LATER_THAN_FILE=$(cat )
+      if [[ -f ${LATER_THAN_FILE} ]]; then 
+        NEWER=" -newer ${LATER_THAN_FILE} "
+      fi 
+    fi     
+
+    ALL_BACKUPS=$(find . -type f ${NEWER} -wholename "./*.tar.gz" | sort -n)
     BACKUP_COUNT=$(echo "${ALL_BACKUPS}" | wc -l)
 
     prune_log "    /./././././././././\.\.\.\.\.\.\.\.\.\.\  "
     prune_log "    /.                                    .\  "
     prune_log "    /.  ${BACKUP_COUNT} total backups"
+    prune_log "    /.   newer: ${LATER_THAN_FILE}"
     prune_log "    /.                                 "
-    prune_log "    /.       last two of ${TAKE}       "
+    # prune_log "    /.       last two of ${TAKE}       "
     prune_log "    /.                                 "
 
     if [[ ${BACKUP_COUNT} -lt 2 ]]; then 
@@ -140,14 +184,14 @@ function prune_backups() {
       break 
     fi 
 
-    if [[ ${TAKE} -gt ${BACKUP_COUNT} ]]; then 
-      prune_log "We're at the end of the list, quitting"
-      break 
-    fi 
+    #if [[ ${TAKE} -gt ${BACKUP_COUNT} ]]; then 
+    #  prune_log "We're at the end of the list, quitting"
+    #  break 
+    #fi 
     
     # -- selection 
 
-    TWO_EARLIEST=$(echo "${ALL_BACKUPS}" | head -n ${TAKE} | tail -n 2)
+    TWO_EARLIEST=$(echo "${ALL_BACKUPS}" | head -n 2)
     FIRST=$(echo "${TWO_EARLIEST}" | head -n 1)
     SECOND=$(echo "${TWO_EARLIEST}" | tail -n 1)
 
@@ -198,8 +242,17 @@ function prune_backups() {
       echo "${STATS_FOLDER_DIFF}"
       echo " ^ ^ ^ ^ ^ "      
 
-      TAKE=$(( ${TAKE} + 1 ))
+      if [[${STATS_FOLDER_DIFF_CODE} -eq 1 ]]; then 
+        prune_log "Stats diff is 1, looking more closely.."
+        json_diff_stats_folder "${FIRST_WORK_FOLDER}" "${SECOND_WORK_FOLDER}"
+        json_diff_stats_folder "${SECOND_WORK_FOLDER}" "${FIRST_WORK_FOLDER}"
+      else 
+        prune_log "Stats diff is 0"
+      fi 
 
+      # TAKE=$(( ${TAKE} + 1 ))
+
+      echo -n ${FIRST} > 
     fi 
 
     # -- SECOND ATTEMPT: get presumed single playerdata/stats file in each backup and compare each set 
@@ -341,8 +394,38 @@ function prune_backups() {
 
     prune_log "Cleaning up ${SECOND}"
     cleanup_temp "${SECOND_WORK_FOLDER}"
-        
+
   done
+
+  prune_log "Cleaning out pruned folder.."
+  rm -vf ${BACKUPS_WORLD_FOLDER}/pruned/*
+
+  BACKUP_RETENTION_WINDOW=1
+  BACKUP_EXPIRATION_DAYS=7
+
+  while :; do 
+    BACKUPS_IN_WINDOW=$(find . -mtime -${BACKUP_RETENTION_WINDOW} -wholename "./*.tar.gz" | wc -l)  
+    echo "Backup retention window: ${BACKUP_RETENTION_WINDOW} -- Backups: ${BACKUPS_IN_WINDOW}"
+    if [[ ${BACKUPS_IN_WINDOW} -gt 5 ]]; then 
+      echo "This is good enough!"
+      if [[ ${BACKUP_RETENTION_WINDOW} > ${BACKUP_EXPIRATION_DAYS} ]]; then 
+        echo "We had to go out ${BACKUP_RETENTION_WINDOW} to collect enough backups, so bumping expiration to there"
+        BACKUP_EXPIRATION_DAYS=${BACKUP_RETENTION_WINDOW}
+      fi 
+      EXPIRED_BACKUPS=$(find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | wc -l)
+      echo "${EXPIRED_BACKUPS} expired backups going out ${BACKUP_EXPIRATION_DAYS} days"
+      find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | mv -anv -t ${BACKUPS_WORLD_FOLDER}/expired
+      break 
+    fi 
+    if [[ ${BACKUP_RETENTION_WINDOW} -gte 30 ]]; then 
+      echo "No backups for 30 days? We aren't deleting anything."
+      break 
+    fi 
+    BACKUP_RETENTION_WINDOW=$(( ${BACKUP_RETENTION_WINDOW} + 1 ))
+  done 
+  
+  prune_log "Cleaning out expired folder.."
+  rm -vf ${BACKUPS_WORLD_FOLDER}/expired/*
 
   popd 
   
@@ -377,9 +460,11 @@ function schedule_backup() {
 
   echo "Initializing backup/prune loop"
 
-  (while :; do 
+  (while :; do     
     sleep $(( 60*${BACKUP_PERIOD_MIN} )) \
-      && (backup && prune_backups || echo "OH NO! something failed in the backup..") >> /opt/minecraft/log/backup.log 2>&1 
+      && touch /opt/minecraft/log/backup.lock \
+      && (backup && prune_backups || echo "OH NO! something failed in the backup..") >> /opt/minecraft/log/backup.log 2>&1 \
+      && rm -vf /opt/minecraft/log/backup.lock
   done) &
 }
 

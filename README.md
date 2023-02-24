@@ -41,13 +41,23 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
 ### Development 
 
-* on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand
+#### backlog 
+
+* improve performance on backup script.. repeats checking all backups every time
+* better final report on backup + log minikube->host copy also
+* maybe volume in the log folder so we don't need to shell into the server container
+* fix weird sync issue copying from minikube container / overlaps backup/pruning process.. also recopies everything every time
+* on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand, making one last backup
 * extract backup pruning to work independently
-* proper multiplayer world backup de-duping (multiple playerdata/stats files)
 * handle minikube + docker deployments together without ports clashing (globally incrementing)
 * comprehensive status page - what is deployed where + connection details, including proxy status
 * Makefile 
 * sub-versions on server versions using standard-version, at least for image tagging (minecraft-server-java:1.19.3-1.0.4) 
+* allow multiple servers/worlds per version
+
+#### in QA 
+
+* proper multiplayer world backup de-duping (multiple playerdata/stats files)
 
 ## 3/29/22 
 

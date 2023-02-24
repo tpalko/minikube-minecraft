@@ -65,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     -b)     SPEC_BACKUP_FILE="$2"
             shift; shift 
             ;;
+    *)      echo "$1 is not recognized as a command-line argument" && exit 1
+            ;;
   esac 
 done 
 
@@ -180,13 +182,13 @@ function load() {
 
   echo "Moving ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}/* --> ${VERSIONED_WORLD_PATH}"
   
-  # -- move world data up one folder, out of transmission folder
+  echo "move world data up to ${VERSIONED_WORLD_PATH}, out of transmission folder ${WORK_FOLDER}"
   target_platform_cmd "sudo mv -nv ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}/* ${VERSIONED_WORLD_PATH}"
-  # -- remove now-empty transmission folder
+  echo "remove now-empty transmission folder ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}"
   target_platform_cmd "sudo rm -rvf ${VERSIONED_WORLD_PATH}/${WORK_FOLDER}"
-  # -- remove session.lock
+  echo "remove session.lock ${VERSIONED_WORLD_PATH}/session.lock"
   target_platform_cmd "sudo rm -vf ${VERSIONED_WORLD_PATH}/session.lock"
-  
+  echo "remove local work folder ${WORK_FOLDER}"
   rm -rf ${WORK_FOLDER}
   
   target_platform_cmd "sudo chown -R 999:999 ${VERSIONED_WORLD_PATH}"
@@ -204,10 +206,17 @@ function clear_crontab_backup() {
 
 function add_crontab_backup() {
 
-  echo "Adding crontab: ${CRONTAB_TITLE}"
+  echo "Creating ${PWD}/log/${TYPE}/${VERSION}.."
+  mkdir -p ${PWD}/log/${TYPE}/${VERSION}
+
+  # CRONTAB_CMD="([[ ! -f ${PWD}/log/${TYPE}/${VERSION}/crontab.lock 2>/dev/null ]] && minikube ssh \"[[ ! -f minecraft/${TYPE}/volumes-${VERSION}/log/backup.lock ]]\" 2>/dev/null && touch ${PWD}/log/${TYPE}/${VERSION}/crontab.lock && ${BACKUP_CP_CMD} \"${PWD}/backups/${VERSION}/\" || echo \"maybe backup.lock exists.. let's wait..\") && rm -vf touch ${PWD}/log/${TYPE}/${VERSION}/crontab.lock >> ${PWD}/log/${TYPE}/${VERSION}/crontab.log 2>&1"
+
+  echo "Adding crontab: ${CRONTAB_TITLE} -> cron.sh"
+  # echo "Command: ${CRONTAB_CMD}"
+
   printf "$(crontab -l) \n\
 # ${CRONTAB_TITLE} \n\
-*/15 * * * * ${BACKUP_CP_CMD} \"${PWD}/backups/${VERSION}/\" \n\
+#*/15 * * * * TYPE=${TYPE} VERSION=${VERSION} WORLD_NAME=\"${WORLD_NAME}\" BACKUP_CP_CMD=\"${BACKUP_CP_CMD}\" ${PWD}/../scripts/cron.sh \n\
 " | crontab -
 
 }
@@ -521,7 +530,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
 
   if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
-    export BACKUP_CP_CMD="docker cp minikube:\"${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""
+    export BACKUP_CP_CMD="docker cp minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}"
   elif [[ "${TARGET_PLATFORM}" = "docker" ]]; then 
     export BACKUP_CP_CMD="cp -anv \"${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}\""
   fi

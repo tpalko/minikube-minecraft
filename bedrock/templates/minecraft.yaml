@@ -13,12 +13,15 @@ spec:
         app: ${IMAGE}-${VERSION}
     spec:
       volumes:
+      - name: log
+        persistentVolumeClaim:
+          claimName: minecraft-${TYPE}-log-${VERSION}
       - name: backups 
         persistentVolumeClaim:
-          claimName: minecraft-bedrock-backups-${VERSION}
+          claimName: minecraft-${TYPE}-backups-${VERSION}
       - name: world 
         persistentVolumeClaim:
-          claimName: minecraft-bedrock-world-${VERSION}
+          claimName: minecraft-${TYPE}-world-${VERSION}
       containers:
       - name: ${IMAGE}
         image: ${IMAGE}:${VERSION}
@@ -27,6 +30,8 @@ spec:
         - configMapRef:
             name: ${IMAGE}-${VERSION}
         volumeMounts:
+        - mountPath: /opt/minecraft/log
+          name: log
         - mountPath: /opt/minecraft/backups
           name: backups 
         - mountPath: "${WORLD_BASE}/${WORLD_NAME}"
