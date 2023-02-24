@@ -64,14 +64,4 @@ else
 
     ${DOCKER_CMD}
 
-    # docker run \
-    #     -u 0 \
-    #     -it \
-    #     --env-file=${PWD}/.env \
-    #     -e BACKUPS_WORLD_FOLDER=/opt/minecraft/backups \
-    #     -v ${BACKUP_FOLDER}:/opt/minecraft/backups \
-    #     /bin/bash 
-
-        # ${IMAGE}:${VERSION} ./scripts/./prune_standalone.sh 
-
 fi 

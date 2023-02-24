@@ -216,7 +216,7 @@ function add_crontab_backup() {
 
   printf "$(crontab -l) \n\
 # ${CRONTAB_TITLE} \n\
-#*/15 * * * * TYPE=${TYPE} VERSION=${VERSION} WORLD_NAME=\"${WORLD_NAME}\" BACKUP_CP_CMD=\"${BACKUP_CP_CMD}\" ${PWD}/../scripts/cron.sh \n\
+*/15 * * * * TYPE=${TYPE} VERSION=${VERSION} WORLD_NAME=\"${WORLD_NAME}\" BACKUP_CP_CMD=\"${BACKUP_CP_CMD}\" ${PWD}/../scripts/cron.sh \n\
 " | crontab -
 
 }

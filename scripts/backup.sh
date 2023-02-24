@@ -170,7 +170,7 @@ function prune_duplicates() {
       || (prune_log "Ooops! What happened?" && cleanup_temp "${FIRST_WORK_FOLDER}" && mv -nv "${FIRST}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
 
     expand_to_temp "${SECOND}" "${SECOND_WORK_FOLDER}" \
-      || (prune_log "Ooops! What happened?" && cleanup_temp "${FIRST_WORK_FOLDER}" && cleanup_temp "${SECOND_WORK_FOLDER}" && mv "${SECOND}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
+      || (prune_log "Ooops! What happened?" && cleanup_temp "${FIRST_WORK_FOLDER}" && cleanup_temp "${SECOND_WORK_FOLDER}" && mv -nv "${SECOND}" ${BACKUPS_WORLD_FOLDER}/broken && continue)
     
     PLAYERDATA_FOLDER_DIFF=$(diff -rwa "${FIRST_WORK_FOLDER}/playerdata" "${SECOND_WORK_FOLDER}/playerdata" 2>&1)
     PLAYERDATA_FOLDER_DIFF_CODE=$?
@@ -233,10 +233,10 @@ function prune_expired() {
       fi 
       EXPIRED_BACKUPS=$(find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | wc -l)
       echo "${EXPIRED_BACKUPS} expired backups going out ${BACKUP_EXPIRATION_DAYS} days"
-      find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | mv -anv -t ${BACKUPS_WORLD_FOLDER}/expired
+      find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | mv -nv -t ${BACKUPS_WORLD_FOLDER}/expired
       break 
     fi 
-    if [[ ${BACKUP_RETENTION_WINDOW} -gte 30 ]]; then 
+    if [[ ${BACKUP_RETENTION_WINDOW} -ge 30 ]]; then 
       echo "No backups for 30 days? We aren't deleting anything."
       break 
     fi 
