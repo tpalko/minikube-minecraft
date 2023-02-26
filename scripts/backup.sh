@@ -121,16 +121,20 @@ function prune_duplicates() {
     NEWER=
     LATER_THAN_FILE=
     if [[ -f ${PRUNE_DIFF_CURSOR_FILE} ]]; then 
+      echo "Prune diff cursor file exists: ${PRUNE_DIFF_CURSOR_FILE}"
       LATER_THAN_FILE=$(cat ${PRUNE_DIFF_CURSOR_FILE})
       if [[ -f ${LATER_THAN_FILE} ]]; then 
+        echo "Prune diff cursor exists: ${LATER_THAN_FILE}"
         NEWER=" -newer ${LATER_THAN_FILE} "
       else 
         echo "Later-than file ${LATER_THAN_FILE} does not exist!"
         unset LATER_THAN_FILE
       fi 
+    else 
+      echo "Prune diff cursor file missing!"
     fi     
 
-    ALL_BACKUPS=$(find . -type f ${NEWER} -wholename "./*.tar.gz" | sort -n)
+    ALL_BACKUPS=$(find . -type f ${NEWER} -wholename "./${WORLD_NAME}-*.tar.gz" | sort -n)
     BACKUP_COUNT=$(echo "${ALL_BACKUPS}" | wc -l)
 
     prune_log "    /./././././././././\.\.\.\.\.\.\.\.\.\.\  "
@@ -223,7 +227,7 @@ function prune_duplicates() {
 
 function prune_expired() {
   while :; do 
-    BACKUPS_IN_WINDOW=$(find . -mtime -${BACKUP_RETENTION_WINDOW} -wholename "./*.tar.gz" | wc -l)  
+    BACKUPS_IN_WINDOW=$(find . -mtime -${BACKUP_RETENTION_WINDOW} -wholename "./${WORLD_NAME}-*.tar.gz" | wc -l)  
     echo "Backup retention window: ${BACKUP_RETENTION_WINDOW} -- Backups: ${BACKUPS_IN_WINDOW}"
     if [[ ${BACKUPS_IN_WINDOW} -gt 5 ]]; then 
       echo "This is good enough!"
@@ -231,9 +235,10 @@ function prune_expired() {
         echo "We had to go out ${BACKUP_RETENTION_WINDOW} to collect enough backups, so bumping expiration to there"
         BACKUP_EXPIRATION_DAYS=${BACKUP_RETENTION_WINDOW}
       fi 
-      EXPIRED_BACKUPS=$(find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | wc -l)
-      echo "${EXPIRED_BACKUPS} expired backups going out ${BACKUP_EXPIRATION_DAYS} days"
-      find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./*.tar.gz" | mv -nv -t ${BACKUPS_WORLD_FOLDER}/expired
+      EXPIRED_BACKUPS=$(find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./${WORLD_NAME}-*.tar.gz")
+      EXPIRED_BACKUPS_COUNT=$(echo "${EXPIRED_BACKUPS}" | wc -l)
+      echo "${EXPIRED_BACKUPS_COUNT} expired backups going out ${BACKUP_EXPIRATION_DAYS} days"
+      echo "${EXPIRED_BACKUPS}" | xargs mv -nv -t ${BACKUPS_WORLD_FOLDER}/expired
       break 
     fi 
     if [[ ${BACKUP_RETENTION_WINDOW} -ge 30 ]]; then 
@@ -245,6 +250,8 @@ function prune_expired() {
 }
 
 function prune_backups() {
+
+  RUN_TIMESTAMP=${RUN_TIMESTAMP:=$(date +%F-%H-%M)}
 
   PRUNE_LOG=/opt/minecraft/log/prune_${RUN_TIMESTAMP}.log
   
@@ -277,6 +284,8 @@ function prune_backups() {
 }
 
 function backup() {
+
+  RUN_TIMESTAMP=${RUN_TIMESTAMP:=$(date +%F-%H-%M)}
 
   echo "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
   echo "-=- "

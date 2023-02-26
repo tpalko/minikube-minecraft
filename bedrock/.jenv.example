@@ -4,8 +4,7 @@
             "version": "1.19.3",
             "target_platform": "minikube",
             "world_name": "minecraft-world",
-            "gamemode": "survival",
-            "sha": "c9df48efed58511cdd0213c56b9013a7b5c9ac1f"
+            "gamemode": "survival"
         }
     ]
 }

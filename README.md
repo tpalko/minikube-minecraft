@@ -2,11 +2,50 @@
 
 Don't care about the details?
 
+### Install script shortcuts
+
+At the root of the project, 
+
 ```
-minikube-minecraft $ minikube start 
+./install.sh
 ```
 
-When `minikube status` shows `running`:
+This script will create symlinks from certain scripts in `scripts/` to both the `java` and `bedrock` folders. Unless otherwise specific, operations after this point will be executed from one of those two folders.
+
+### Choose your Minecraft variant: Java or Bedrock 
+
+`cd` into the chosen folder, `java/` or `bedrock/`.
+
+This is a good place to mention that there are some operational differences between the two variants.
+
+* to download the server jar file, the `java` build script will use a hash value, which is different for each version. The value for the latest version is obtained by visiting `https://www.minecraft.net/en-us/download/server`, finding the hyperlink for `minecraft_server.x.y.z.jar`, and copying the hash value from that link's target. (It will be something like `https://piston-data.mojang.com/v1/objects/c9df48efed58511cdd0213c56b9013a7b5c9ac1f/server.jar` where "c9df48efed58511cdd0213c56b9013a7b5c9ac1f" is the hash value.)
+
+* the `bedrock` build script follows a process to download a file from `minecraft.net` and inspect it to get the latest server version, which is used to form the zip file download URL, something like `https://minecraft.azureedge.net/bin-linux/bedrock-server-1.19.62.01.zip`
+
+Because of the different methods of locating the appropriate server archive, the configuration for each variant needs to be handled differently and this is covered in the configuration section below.
+
+### Create configuration 
+
+`minecraft-up` relies on two configuration files. 
+Each env dotfile has an `.example` version in source control. 
+
+**.env** 
+
+`.env` is general deployment/runtime environment. These values become environment variables for use by the server, backup scripts, etc. in the container.
+
+Copy `.env.example` to `.env`. Most values as defaults are fine. `USERNAME` is only relevant for the Java variant, and must be changed - this is your Minecraft username. It is used to make the user a server operator on startup. Also be advised to change `RCON_PASSWORD`.
+
+**.jenv**
+
+`.jenv` is per-deployment/server config, some values become environment variables in the container. 
+
+Generally, `.jenv` is a list of possible server configurations, keyed by _version_, i.e. one entry per version. Several scripts accept a `-v VERSION` flag which will select that entry. This has some important caveats. For Java, it instructs the build process on how to find the server archive for download, and so the list is truly one entry per version. For Bedrock, since its build process always only downloads the latest version, the `version` value here is still used to key off of and for naming deployed resources, but has no impact on the resulting build - the server will always be the latest available version. This affords some freedoms - Bedrock can store unlimited configurations (world name, game mode, target platform), the server version just isn't a user choice.
+
+The `target_platform` value for `.jenv` entries determines whether the server is deployed on Kubernetes or simply in a Docker container. The biggest difference between these is the networking, although storage is affected as well. This is discussed in more detail in the networking and storage sections below.
+
+`.jenv` is created if it doesn't already exist when `envmanager` is executed, but copying `.jenv.example` to `.jenv` is fine too, and you'll have the config for whatever server version is set there.
+
+If `minikube status` shows `Running`:
 
 ```
 minikube-minecraft $ ./install.sh 
@@ -48,6 +87,7 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 * maybe volume in the log folder so we don't need to shell into the server container
 * fix weird sync issue copying from minikube container / overlaps backup/pruning process.. also recopies everything every time
 * on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand, making one last backup
+* handle bedrock version better - is usually discovered during image build, as opposed to java where it informs the build
 * extract backup pruning to work independently
 * handle minikube + docker deployments together without ports clashing (globally incrementing)
 * comprehensive status page - what is deployed where + connection details, including proxy status

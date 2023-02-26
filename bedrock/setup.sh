@@ -1,8 +1,8 @@
-#!?bin/bash 
+#!/bin/bash 
 
 set -e 
 
-mkdir -p {downloads,server}
+mkdir -vp {downloads,server}
 
 if [[ ! -f downloads/version.html ]]; then 
 
@@ -20,6 +20,8 @@ if [[ ! -f downloads/version.html ]]; then
     --url "${VERSION_URL}"  
 fi
 
+# something like..
+# https://minecraft.azureedge.net/bin-linux/bedrock-server-1.19.62.01.zip
 URL=$(grep -o 'https://minecraft.azureedge.net/bin-linux/[^"]*' downloads/version.html) \
     && echo "URL: ${URL}" \
     && FILE=$(echo "$URL" | sed 's#.*/##')
