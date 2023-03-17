@@ -83,11 +83,16 @@ if [[ -n "${SPEC_BACKUP_FILE}" && -z "${SPEC_WORLD_NAME}" ]]; then
   exit 1
 fi 
 
-if [[ -n "${SPEC_BACKUP_FILE}" && (("${SPEC_BACKUP_FILE}" =~ .*\.tar\.gz && ! -f "${SPEC_BACKUP_FILE}") \
-  || ! -d ${SPEC_BACKUP_FILE}) ]]; then 
-
-  echo "${SPEC_BACKUP_FILE} doesn't exist"
-  exit 1
+if [[ -n "${SPEC_BACKUP_FILE}" ]]; then 
+  echo "${SPEC_BACKUP_FILE} you say..?"
+  
+  if [[ "${SPEC_BACKUP_FILE}" =~ .*\.tar\.gz && ! -f "${SPEC_BACKUP_FILE}" ]]; then 
+    echo "${SPEC_BACKUP_FILE} is an archive but doesn't exist"
+    exit 1
+  #elif [[ ! -d ${SPEC_BACKUP_FILE} ]]; then 
+  #  echo "${SPEC_BACKUP_FILE} is a folder, but doesn't exist"
+  #  exit 1
+  fi 
 fi 
 
 if [[ -n "${SPEC_WORLD_NAME}" && -z "${SPEC_VERSION}" ]]; then 
@@ -166,6 +171,7 @@ function load() {
       echo "*    WHAT!?!? Replacing incorrect (${LEVELNAME_CONTENTS}) ${LEVELNAME_FILE}"
       echo "*"
       echo "*****"
+      mv ${WORK_FOLDER}/${LEVELNAME_FILE} ${WORK_FOLDER}/${LEVELNAME_FILE}.bak
       printf "${WORLD_NAME}" > "${WORK_FOLDER}/${LEVELNAME_FILE}"
     else 
       echo "${WORLD_NAME} found as ${LEVELNAME_FILE}"
@@ -204,21 +210,22 @@ function clear_crontab_backup() {
   crontab -l | sed "/# ${CRONTAB_TITLE}/,+1d" | crontab -
 }
 
+function get_crontab_cmd() {
+  [[ -z "${VERSION}" || -z "${WORLD_NAME}" || -z "${BACKUP_CP_CMD}" || ! -f ${PWD}/cron ]] \
+    && echo "Crontab command cannot be generated (VERSION=${VERSION} WORLD_NAME=${WORLD_NAME} BACKUP_CP_CMD=${BACKUP_CP_CMD} or ${PWD}/cron DNE)" \
+    && return 1
+  echo "VERSION=${VERSION} WORLD_NAME=\"${WORLD_NAME}\" BACKUP_CP_CMD=\"${BACKUP_CP_CMD}\" ${PWD}/cron"
+}
+
 function add_crontab_backup() {
 
-  echo "Creating ${PWD}/log/${TYPE}/${VERSION}.."
-  mkdir -p ${PWD}/log/${TYPE}/${VERSION}
-
-  # CRONTAB_CMD="([[ ! -f ${PWD}/log/${TYPE}/${VERSION}/crontab.lock 2>/dev/null ]] && minikube ssh \"[[ ! -f minecraft/${TYPE}/volumes-${VERSION}/log/backup.lock ]]\" 2>/dev/null && touch ${PWD}/log/${TYPE}/${VERSION}/crontab.lock && ${BACKUP_CP_CMD} \"${PWD}/backups/${VERSION}/\" || echo \"maybe backup.lock exists.. let's wait..\") && rm -vf touch ${PWD}/log/${TYPE}/${VERSION}/crontab.lock >> ${PWD}/log/${TYPE}/${VERSION}/crontab.log 2>&1"
-
-  echo "Adding crontab: ${CRONTAB_TITLE} -> cron.sh"
-  # echo "Command: ${CRONTAB_CMD}"
+  echo "Adding crontab: ${CRONTAB_TITLE}"
+  CRONTAB_CMD=$(get_crontab_cmd) || return $?
 
   printf "$(crontab -l) \n\
 # ${CRONTAB_TITLE} \n\
-*/15 * * * * TYPE=${TYPE} VERSION=${VERSION} WORLD_NAME=\"${WORLD_NAME}\" BACKUP_CP_CMD=\"${BACKUP_CP_CMD}\" ${PWD}/../scripts/cron.sh \n\
+*/15 * * * * ${CRONTAB_CMD} \n\
 " | crontab -
-
 }
 
 # function add_crontab_minikube_backup() {
@@ -403,7 +410,9 @@ function up() {
     
     kubectl rollout restart deployment ${IMAGE}-${VERSION}
     
-    DEPLOY_SERVICES=$(minikube service list | grep 1-19-3 -A 1 | grep -v mcrcon)
+    SERVICE_NAME="${IMAGE}-service-${VERSION_HYPHEN}"
+
+    DEPLOY_SERVICES=$(minikube service list | grep ${SERVICE_NAME} -A 1 | grep -v mcrcon)
 
     export MINIKUBE_URL_CODE
     DEPLOY_MINIKUBE_URL=$([[ ${DEPLOY_SERVICES} =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:([0-9]{5}) ]] \
@@ -440,8 +449,7 @@ function up() {
   [[ ! -d ${PWD}/backups/${VERSION}/${WORLD_NAME} ]] && mkdir -pv ${PWD}/backups/${VERSION}/${WORLD_NAME}
   
   clear_crontab_backup
-  add_crontab_backup  
-
+  add_crontab_backup || return $?
 }
 
 function down() {
@@ -470,6 +478,8 @@ function down() {
   # 
 
   clear_crontab_backup
+
+
   
   echo "Copying the last of the backups:"
   echo "${BACKUP_CP_CMD} --> ${PWD}/backups/${VERSION}"
@@ -491,7 +501,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
     continue 
   fi 
 
-  export WORLD_NAME=$(version_parameter world_name)
+  export WORLD_NAME="$(version_parameter world_name)"
   export GAMEMODE=$(version_parameter gamemode)
   export TARGET_PLATFORM=$(version_parameter target_platform)
   export CRONTAB_TITLE="${IMAGE}-${VERSION} ${TARGET_PLATFORM} world volume backup"
@@ -538,7 +548,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
   if [[ "${ACTION}" = "up" ]]; then 
     up
   elif [[ "${ACTION}" = "down" ]]; then 
-    down 
+    down || (echo "Deploy teardown failed ${ERRORMSG}")
   fi 
 
 done 

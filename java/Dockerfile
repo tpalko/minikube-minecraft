@@ -14,6 +14,8 @@ ENV HASH=${HASH}
 
 RUN wget https://launcher.mojang.com/v1/objects/${HASH}/server.jar
 
+# -- 1.19.4
+#RUN wget https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar
 # -- 1.19.3
 #RUN wget https://launcher.mojang.com/v1/objects/c9df48efed58511cdd0213c56b9013a7b5c9ac1f/server.jar
 # -- 1.18.2

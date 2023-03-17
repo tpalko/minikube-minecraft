@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-set -e 
+# set -e 
 
 case $1 in 
   start|stop)   ACTION=$1
@@ -18,102 +18,80 @@ EXISTING_PROXY_CONTAINER=$(docker ps --filter="name=${NAME}" -q)
 DEAD_CONTAINER=$(docker ps -qa --filter="name=${NAME}")
 INTERACTIVE=${INTERACTIVE:=0}
 
-# source minikube env 
-. ../scripts/minikube-env.sh 
-
 function find_host_for_version() {
     
   HOST_CONTAINER_FILTER="POD_${IMAGE}-${VERSION}"
   DOCKER_CONTAINER_ID=$(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q)
 
   if [[ -z "${DOCKER_CONTAINER_ID}" ]]; then 
-    return 
-    # echo "No running container found for ${HOST_CONTAINER_FILTER}"
-    # return 1 
+    echo "No running container found for ${HOST_CONTAINER_FILTER}"
+    return 1 
   fi 
 
   NEW_HOST=$(docker inspect $(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
   
-  if [[ -z "${NEW_HOST}" ]]; then 
-    return 
-    # echo "No IP address found for ${HOST_CONTAINER_FILTER}. Skipping ${VERSION}."
-    # return 1
+  if [[ -z "${NEW_HOST}" || "${NEW_HOST}" = "null" ]]; then 
+    echo "No IP address found for ${HOST_CONTAINER_FILTER}. Skipping ${VERSION}."
+    return 1
   fi 
 
   VERSION_HOST_ARRAY=(${NEW_HOST})
 
   if [[ ${#VERSION_HOST_ARRAY[@]} -gt 1 ]]; then 
-    return 
-    # echo "Multiple IP addresses found for ${HOST_CONTAINER_FILTER} (${VERSION_HOST_ARRAY[@]}). Skipping ${VERSION}."
-    # return 1
+    echo "Multiple IP addresses found for ${HOST_CONTAINER_FILTER} (${VERSION_HOST_ARRAY[@]}). Skipping ${VERSION}."
+    return 1
   fi 
 
   echo ${NEW_HOST}
-  # return 0
 }
 
-# source java 
-pushd ../java
+function scrape_hosts() {
 
-. .env 
-VERSION_ARRAY=($(cat .jenv | jq -r ".worlds | .[] | .version"))
+  CONFIG_PATH=$1
+  
+  # source java 
+  pushd ${CONFIG_PATH}
 
-echo "Standing up proxy for ${#VERSION_ARRAY[@]} Java versions: ${VERSION_ARRAY[@]}"
+  . common 
+  . .env 
 
-JAVA_HOSTS=()
-JAVA_VERSION_HOST_PAIRS=()
+  HOSTS_ARRAY=${TYPE}_HOSTS 
+  VERSION_HOST_PAIRS_ARRAY=${TYPE}_VERSION_HOST_PAIRS
 
-for VERSION in ${VERSION_ARRAY[@]}; do 
+  for VERSION in ${VERSION_ARRAY[@]}; do 
 
-  echo "Looking for Java version ${VERSION} host pod.."  
-  NEW_HOST=$(find_host_for_version)
+    echo "Looking for ${TYPE} version ${VERSION} host pod.."  
+    NEW_HOST=$(find_host_for_version)
 
-  if [[ -n "${NEW_HOST}" ]]; then 
-    echo "Found ${NEW_HOST} for ${VERSION}"
-    JAVA_HOSTS+=(${NEW_HOST})
-    JAVA_VERSION_HOST_PAIRS+=(${VERSION}=${NEW_HOST})
-  fi 
-done 
+    if [[ $? -eq 0 && -n "${NEW_HOST}" ]]; then 
+      echo "Found ${NEW_HOST} for ${VERSION}"
+      eval "${HOSTS_ARRAY}+=(${NEW_HOST})"
+      eval "${VERSION_HOST_PAIRS_ARRAY}+=(${VERSION}=${NEW_HOST})"
+    else 
+      echo "${NEW_HOST}"
+    fi 
+  done 
 
-popd 
+  popd 
 
-# source bedrock 
-pushd ../bedrock 
+}
 
-. .env 
-VERSION_ARRAY=($(cat .jenv | jq -r ".worlds | .[] | .version"))
+# source minikube env 
+. ../scripts/minikube-env.sh 
 
-echo "Standing up proxy for ${#VERSION_ARRAY[@]} Bedrock versions: ${VERSION_ARRAY[@]}"
-
-BEDROCK_HOSTS=()
-BEDROCK_VERSION_HOST_PAIRS=()
-
-for VERSION in ${VERSION_ARRAY[@]}; do 
-
-  echo "Looking for Bedrock version ${VERSION} host pod.."
-  NEW_HOST=$(find_host_for_version)
-
-  if [[ $? -eq 0 ]]; then 
-    echo "Found ${NEW_HOST} for ${VERSION}"
-    BEDROCK_HOSTS+=(${NEW_HOST})
-    BEDROCK_VERSION_HOST_PAIRS+=(${VERSION}=${NEW_HOST})
-  else 
-    echo "${NEW_HOST}"
-  fi 
-done 
-
-popd 
+scrape_hosts ../java
+scrape_hosts ../bedrock
 
 # clear minikube env 
 . ../scripts/minikube-env-deactivate.sh 
 
-if [[ ${#JAVA_HOSTS[@]} -eq 0 && ${#BEDROCK_HOSTS[@]} -eq 0 ]]; then 
+if [[ ${#java_HOSTS[@]} -eq 0 && ${#bedrock_HOSTS[@]} -eq 0 ]]; then 
   echo "Neither Java nor Bedrock appears to have any hosts."
   exit 0
 fi 
 
-echo "Found Java hosts: ${JAVA_HOSTS[@]}"
-echo "Found Bedrock hosts: ${BEDROCK_HOSTS[@]}"
+echo "Found Java hosts: ${java_HOSTS[@]}"
+echo "Found Bedrock hosts: ${bedrock_HOSTS[@]}"
 
 . .env 
 
@@ -149,7 +127,7 @@ function clear_routes() {
 }
 
 function add_route() {
-  for HOST in ${BEDROCK_HOSTS[@]} ${JAVA_HOSTS[@]}; do 
+  for HOST in ${bedrock_HOSTS[@]} ${java_HOSTS[@]}; do 
     NEW_ROUTE="route add -net ${HOST} gw ${MINIKUBE_IP} netmask 255.255.255.255 dev ${MINIKUBE_INTERFACE}"
     echo "Adding route:"
     echo "${NEW_ROUTE}"
@@ -191,8 +169,8 @@ function run_container() {
     docker rm ${NAME}
   fi 
   
-  JAVA_HOST_STRING="$(echo ${JAVA_VERSION_HOST_PAIRS[@]})"
-  BEDROCK_HOST_STRING="$(echo ${BEDROCK_VERSION_HOST_PAIRS[@]})"
+  JAVA_HOST_STRING="$(echo ${java_VERSION_HOST_PAIRS[@]})"
+  BEDROCK_HOST_STRING="$(echo ${bedrock_VERSION_HOST_PAIRS[@]})"
 
   # JAVA_HOST_STRING="$(echo ${JAVA_HOSTS[@]})"
   DOCKER_RUN_CMD="docker run -d --env-file .env \

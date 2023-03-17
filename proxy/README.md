@@ -1,12 +1,8 @@
 # minecraft-proxy
 
-The proxy requires 
+`run.sh` is your deploy script. It expects 
 
-1. minikube to be running 
-
-```
-minikube start 
-```
+1. `minikube` to be running, as the associated docker containers and route table entries are how this proxy does its job
 
 2. The minecraft server and NodePort service (see [the parent readme](../README.md)).
 

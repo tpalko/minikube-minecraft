@@ -9,11 +9,14 @@ IFS=: read -ra BEDROCK_HOST_ARRAY <<< ${BEDROCK_VERSION_HOST_PAIRS}
 if [[ ${#BEDROCK_HOST_ARRAY} -gt 0 ]]; then 
   INDEX=0
   for VERSIONHOST in ${BEDROCK_HOST_ARRAY[@]}; do 
-    
+    echo "Have version-host ${VERSIONHOST}"
     IFS== read -ra VERSIONHOSTPARTS <<< ${VERSIONHOST}
     export VERSION=${VERSIONHOSTPARTS[0]}
+    echo "Exported VERSION=${VERSION}"
     export HOST=${VERSIONHOSTPARTS[1]}    
+    echo "Exported HOST=${HOST}"
     export LISTEN_PORT=$(( ${MINECRAFT_PROXY_BEDROCK_PORT} + ${INDEX} ))
+    echo "Exported LISTEN_PORT=${LISTEN_PORT}"
     TCP_CONF=/app/nginx-bedrock-tcp-${HOST}.conf 
     UDP_CONF=/app/nginx-bedrock-udp-${HOST}.conf
 
@@ -34,12 +37,16 @@ IFS=: read -ra JAVA_HOST_ARRAY <<< ${JAVA_VERSION_HOST_PAIRS}
 if [[ ${#JAVA_HOST_ARRAY} -gt 0 ]]; then 
   INDEX=0
   for VERSIONHOST in ${JAVA_HOST_ARRAY[@]}; do 
-    
+    echo "Have version-host ${VERSIONHOST}"
     IFS== read -ra VERSIONHOSTPARTS <<< ${VERSIONHOST}
     export VERSION=${VERSIONHOSTPARTS[0]}
+    echo "Exported VERSION=${VERSION}"
     export HOST=${VERSIONHOSTPARTS[1]}    
+    echo "Exported HOST=${HOST}"
     export LISTEN_QUERY_PORT=$(( ${MINECRAFT_PROXY_JAVA_QUERY_PORT} + ${INDEX} ))
+    echo "Exported LISTEN_QUERY_PORT=${LISTEN_QUERY_PORT}"
     export LISTEN_RCON_PORT=$(( ${MINECRAFT_PROXY_JAVA_RCON_PORT} + ${INDEX} ))
+    echo "Exported LISTEN_RCON_PORT=${LISTEN_RCON_PORT}"
     
     (envsubst < /app/nginx-java-tcp.conf.tmpl > /app/nginx-java-tcp-${HOST}.conf \
       && echo "$(cat /app/nginx-java-tcp-${HOST}.conf)" \

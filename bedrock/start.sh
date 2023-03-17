@@ -12,7 +12,7 @@ export ENTRIES=(
   allow-flight=${ALLOW_FLIGHT}
   gamemode=${GAMEMODE}
   keep-inventory=${KEEP_INVENTORY}
-  level-name=${WORLD_NAME}
+  level-name="${WORLD_NAME}"
   server-ip=0.0.0.0
   show-coordinates=${SHOW_COORDINATES}
 )

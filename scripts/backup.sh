@@ -203,7 +203,7 @@ function prune_duplicates() {
       echo "${STATS_FOLDER_DIFF}"
       echo " ^ ^ ^ ^ ^ "      
 
-      if [[${STATS_FOLDER_DIFF_CODE} -eq 1 ]]; then 
+      if [[ ${STATS_FOLDER_DIFF_CODE} -eq 1 ]]; then 
         prune_log "Stats diff is 1, looking more closely.."
         json_diff_stats_folder "${FIRST_WORK_FOLDER}" "${SECOND_WORK_FOLDER}"
         json_diff_stats_folder "${SECOND_WORK_FOLDER}" "${FIRST_WORK_FOLDER}"
@@ -227,22 +227,31 @@ function prune_duplicates() {
 
 function prune_expired() {
   while :; do 
-    BACKUPS_IN_WINDOW=$(find . -mtime -${BACKUP_RETENTION_WINDOW} -wholename "./${WORLD_NAME}-*.tar.gz" | wc -l)  
-    echo "Backup retention window: ${BACKUP_RETENTION_WINDOW} -- Backups: ${BACKUPS_IN_WINDOW}"
+    
+    BACKUPS_IN_WINDOW=$(find . -mtime -${BACKUP_RETENTION_WINDOW} -wholename "./${WORLD_NAME}-*.tar.gz" | grep -vE "^$" | wc -l)  
+    prune_log "Backup retention window: ${BACKUP_RETENTION_WINDOW} -- Backups: ${BACKUPS_IN_WINDOW}"
+    
     if [[ ${BACKUPS_IN_WINDOW} -gt 5 ]]; then 
-      echo "This is good enough!"
+      prune_log "This is good enough!"
+      # -- if necessary, push out the default expiration days to accommodate the required minimum retained backups
       if [[ ${BACKUP_RETENTION_WINDOW} > ${BACKUP_EXPIRATION_DAYS} ]]; then 
-        echo "We had to go out ${BACKUP_RETENTION_WINDOW} to collect enough backups, so bumping expiration to there"
+        prune_log "We had to go out ${BACKUP_RETENTION_WINDOW} to collect enough backups, so bumping expiration to there"
         BACKUP_EXPIRATION_DAYS=${BACKUP_RETENTION_WINDOW}
       fi 
-      EXPIRED_BACKUPS=$(find . -mtime +${BACKUP_EXPIRATION_DAYS} -wholename "./${WORLD_NAME}-*.tar.gz")
-      EXPIRED_BACKUPS_COUNT=$(echo "${EXPIRED_BACKUPS}" | wc -l)
-      echo "${EXPIRED_BACKUPS_COUNT} expired backups going out ${BACKUP_EXPIRATION_DAYS} days"
-      echo "${EXPIRED_BACKUPS}" | xargs mv -nv -t ${BACKUPS_WORLD_FOLDER}/expired
+      EXPIRED_BACKUPS=$(find . -mtime +$(( ${BACKUP_EXPIRATION_DAYS} - 1 )) -wholename "./${WORLD_NAME}-*.tar.gz")
+      EXPIRED_BACKUPS_COUNT=$(echo "${EXPIRED_BACKUPS}" | grep -vE "^$" | wc -l)
+      prune_log "${EXPIRED_BACKUPS_COUNT} expired backups going out ${BACKUP_EXPIRATION_DAYS} days"
+      if [[ ${EXPIRED_BACKUPS_COUNT} -gt 0 ]]; then 
+        echo "Expired backups (now moving to expired/):"
+        echo "${EXPIRED_BACKUPS}"
+        echo "${EXPIRED_BACKUPS}" | xargs mv -nv -t ${BACKUPS_WORLD_FOLDER}/expired
+      else 
+        echo "No expired backups"
+      fi 
       break 
     fi 
     if [[ ${BACKUP_RETENTION_WINDOW} -ge 30 ]]; then 
-      echo "No backups for 30 days? We aren't deleting anything."
+      prune_log "No backups for 30 days? We aren't deleting anything."
       break 
     fi 
     BACKUP_RETENTION_WINDOW=$(( ${BACKUP_RETENTION_WINDOW} + 1 ))
@@ -307,14 +316,17 @@ function backup() {
 
 function schedule_backup() {
 
+  BACKUP_LOCK_FILE=/opt/minecraft/log/backup.lock
+
   echo "Initializing backup/prune loop"
 
   (while :; do     
     sleep $(( 60*${BACKUP_PERIOD_MIN} )) \
-      && touch /opt/minecraft/log/backup.lock \
+      && echo "Creating ${BACKUP_LOCK_FILE}" \
+      && touch ${BACKUP_LOCK_FILE} \
       && export RUN_TIMESTAMP=$(date +%F-%H-%M) \
-      && (backup && prune_backups || echo "OH NO! something failed in the backup..") >> /opt/minecraft/log/backup.log 2>&1 \
-      && rm -vf /opt/minecraft/log/backup.lock
+      && (backup && prune_backups || echo "OH NO! something failed in the backup..") >> /opt/minecraft/log/backup-$(date +%F).log 2>&1 \
+      && rm -vf ${BACKUP_LOCK_FILE}
   done) &
 }
 

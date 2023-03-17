@@ -26,35 +26,93 @@ Because of the different methods of locating the appropriate server archive, the
 
 ### Create configuration 
 
-`minecraft-up` relies on two configuration files. 
+`minecraft-up` relies on two configuration files: `.env` and `.jenv`.
+
 Each env dotfile has an `.example` version in source control. 
 
 **.env** 
 
-`.env` is general deployment/runtime environment. These values become environment variables for use by the server, backup scripts, etc. in the container.
+`.env` is general deployment/runtime environment. These values become environment variables for use by the server, backup scripts, etc. in the container. It is also sourced for local/host scripts for things like image building and deployment.
 
-Copy `.env.example` to `.env`. Most values as defaults are fine. `USERNAME` is only relevant for the Java variant, and must be changed - this is your Minecraft username. It is used to make the user a server operator on startup. Also be advised to change `RCON_PASSWORD`.
+Copy `.env.example` to `.env`. Most values as defaults are fine. `USERNAME` is only relevant for the Java variant, and must be changed - this is your Minecraft username (gamertag?). It is used to make the user a server operator on startup. (Additional server ops may be made from this user during gamepplay.) Also be advised to change `RCON_PASSWORD` for obvious security reasons.
 
 **.jenv**
 
-`.jenv` is per-deployment/server config, some values become environment variables in the container. 
+`.jenv` is per-deployment/server config to be used during image build or deployment, but some of these values also become environment variables in the server container.
 
-Generally, `.jenv` is a list of possible server configurations, keyed by _version_, i.e. one entry per version. Several scripts accept a `-v VERSION` flag which will select that entry. This has some important caveats. For Java, it instructs the build process on how to find the server archive for download, and so the list is truly one entry per version. For Bedrock, since its build process always only downloads the latest version, the `version` value here is still used to key off of and for naming deployed resources, but has no impact on the resulting build - the server will always be the latest available version. This affords some freedoms - Bedrock can store unlimited configurations (world name, game mode, target platform), the server version just isn't a user choice.
+Generally, `.jenv` is a list of possible server configurations, and the way it is used by most/all scripts is keyed by _version_, i.e. the user specifies a version to use for an operation (building the server image) and a lookup is performed on `.jenv` to get necessary values for that version, i.e. one entry per version. Several scripts accept the `-v VERSION` flag to select that entry. This has some important caveats. For Java, it is straightforward: the .jar download for a particular version requires a value to construct the URL and that value is a lookup on version in `.jenv`. For Bedrock, since its build process is not aware of the version number ahead of time (it always only downloads the latest version), the `version` value here carries less meaning, however since both Java and Bedrock share these scripts, "version" is still used to key off of in `.jenv`. This affords some freedoms - Bedrock can store multiple configurations (the "version" value can literally be any unique string), but be aware that the "version" value used will be used to tag and name countless resources: k8s deployments, configurations, cron jobs, folders, and files. Under each unique heading in `.jenv` is stored any combination of world name, game mode, target platform. Java, however, (today) only supports one world configuration per version.
 
-The `target_platform` value for `.jenv` entries determines whether the server is deployed on Kubernetes or simply in a Docker container. The biggest difference between these is the networking, although storage is affected as well. This is discussed in more detail in the networking and storage sections below.
+The `target_platform` value for `.jenv` entries determines whether the server is deployed on Kubernetes (`minikube`) or simply in a Docker container (`docker`). The biggest difference between these is the networking, although storage is affected as well. This is discussed in more detail in the networking and storage sections below.
 
-`.jenv` is created if it doesn't already exist when `envmanager` is executed, but copying `.jenv.example` to `.jenv` is fine too, and you'll have the config for whatever server version is set there.
+`.jenv` is created if it doesn't already exist when `envmanager` is executed, but copying `.jenv.example` to `.jenv` is fine too, and you'll have the config for whatever server version is set there as the example.
 
-If `minikube status` shows `Running`:
+### Build your image 
 
 ```
-minikube-minecraft $ ./install.sh 
-minikube-minecraft $ cd java 
-minikube-minecraft/java $ ./build 
-minikube-minecraft/java $ ./deploy up
+$ ./build [-v VERSION]
 ```
+
+Omitting `-v VERSION` will build all versions.
+
+For each version, if `target_platform` is `minikube`, the minikube context is entered before building, which means the resulting image will not be with your host's docker daemon, but rather _within the minikubeiverse_. 
+
+### Deploy
+
+```
+$ ./deploy up [-v VERSION]
+```
+
+Omitting `-v VERSION` will deploy all versions.
+
+This script will:
+
+* set up any necessary storage within the minikube container for PVs
+* create (and start) k8s resources to run the Minecraft server container
+* create a cronjob on your host to periodically copy any backup world archives from the minikube container to your host 
+
+### Migrating to another version 
+
+If you have a world on version X, and then version Y is released, how do you deploy that X world onto a new Y server?
+
+#### The Java path
+
+* grab the server download URL
+* extract the hash, and create a new .jenv entry with envmanager
+* ./build -v Y
+* ./deploy up -v Y -w your-world-name -b /path/to/latest/X/backup
+* maybe minikube ssh -> sudo rm minecraft/java-volumes-Y/world/session.lock 
+* restart launcher to pick up Y
+* fix the multiplayer server if you got a new port
+* restart proxy -> ./run.sh start
+
+### Monitor 
+
+```
+$ ./mcshell logs|shell -v VERSION
+```
+
+Here, `-v VERSION` is required. 
+
+This command will either tail the Minecraft server container logs or shell you into the Minecraft server container to poke around.
+
+As with anything you blindly install after cloning a complete stranger's github repository, you are welcome to observe the wreckage of your system at any time with things like `minikube dashboard` and `crontab -l`.
 
 ### Connecting multiplayer 
+
+**Be warned that you should understand what installing the following _reverse proxy_ will do on your system _before_ installing it.**
+
+If you need to expose your minecraft server anywhere off the host, even on the same 
+network, the proxy server needs to be running:
+
+```
+/java $ cd ../proxy 
+/proxy $ ./run.sh start 
+```
+
+_and_ the following requirements must be met:
+
+* your host and/or router firewall are configured to allow TCP <incremented port> to your host machine 
+* any port forwarding on the router is set up for port <incremented port> -> host machine 
 
 The following are all valid methods for connecting to the server:
 
@@ -63,18 +121,6 @@ The following are all valid methods for connecting to the server:
 * minikube service --all: associated URL for 25565 target port 
 * proxy: localhost + incremented port 
 
-If you need to expose your minecraft server anywhere off the host, even on the same 
-network, the proxy server needs to be running:
-
-```
-minikube-minecraft/java $ cd ../proxy 
-minikube-minecraft/proxy $ ./run.sh start 
-```
-
-_and_ the following requirements must be met:
-
-* your host and/or router firewall are configured to allow TCP <incremented port> to your host machine 
-* any port forwarding on the router is set up for port <incremented port> -> host machine 
 
 Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
@@ -82,13 +128,21 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
 #### backlog 
 
-* improve performance on backup script.. repeats checking all backups every time
+* backup improvements:
+  * use new file-at-a-time look/copy method to finish copying backups at deploy down 
+  * extract backup pruning to work independently
+  * use native backup pruning code on host-side backups
+  * on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand, making one last backup
+* logging improvements:
+  * logrotate on backup/cron logs in server container + on host 
+  * persist server logs outside individual deployments 
+  * maybe volume in the log folder so we don't need to shell into the server container, cron copy from minikube?
+* deploying 1.19.4 reported the 25565-mapped port for 1.19.3 (also happened to be running)
+* when looking for a world backup for deploy up, go into minikube container to make sure there aren't more recent versions 
+* disallow reusing a world name when restoring any non-latest backup (grep backup timestamp and use as suffix?)
+* make deploy up -b not need an absolute path 
 * better final report on backup + log minikube->host copy also
-* maybe volume in the log folder so we don't need to shell into the server container
-* fix weird sync issue copying from minikube container / overlaps backup/pruning process.. also recopies everything every time
-* on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand, making one last backup
 * handle bedrock version better - is usually discovered during image build, as opposed to java where it informs the build
-* extract backup pruning to work independently
 * handle minikube + docker deployments together without ports clashing (globally incrementing)
 * comprehensive status page - what is deployed where + connection details, including proxy status
 * Makefile 
@@ -98,6 +152,9 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 #### in QA 
 
 * proper multiplayer world backup de-duping (multiple playerdata/stats files)
+* expire old backups.. keep 5-7 days of unique backups regardless of age
+* improve performance on backup script.. repeats checking all backups every time
+* fix weird sync issue copying from minikube container / overlaps backup/pruning process.. also recopies everything every time
 
 ## 3/29/22 
 

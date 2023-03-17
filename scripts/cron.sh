@@ -1,11 +1,13 @@
 #!/bin/bash 
 
+MINIKUBE_CMD=/home/debian/tpalko/.asdf/shims/minikube
+
 function crontab_locked() {
     [[ -f ${CRONTAB_LOCK_FILE} ]] 2>/dev/null
 }
 
 function backup_locked() {
-    minikube ssh "[[ -f ${MINIKUBE_LOG_FOLDER}/backup.lock ]]" 2>/dev/null
+    ${MINIKUBE_CMD} ssh "[[ -f ${MINIKUBE_LOG_FOLDER}/backup.lock ]]" 2>/dev/null
 }
 
 function lock_crontab() {
@@ -14,25 +16,39 @@ function lock_crontab() {
 }
 
 function copy_backups() {
-    BACKUP_SIZE=$(minikube ssh "du -hxd 1 ${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME} | tail -n 1" | awk '{ print $1 }')
-    echo "Copying ${BACKUP_SIZE}: ${BACKUP_CP_CMD} ${CURR_FOLDER}/backups/${VERSION}"
-    # ${BACKUP_CP_CMD} "${CURR_FOLDER}/backups/${VERSION}/" 2>&1
-   
-    MINIKUBE_BACKUPS=$(minikube ssh "find ${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME} -wholename \"${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME}/${WORLD_NAME}-*.tar.gz\"")
+    # BACKUPS_FOLDER=$(${MINIKUBE_CMD} ssh "du -hxd 1 ${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME} | tail -n 1")
+    # echo "${BACKUPS_FOLDER}"
+    # BACKUP_SIZE=$(echo ${BACKUPS_FOLDER} | awk '{ print $1 }')
+    echo "Copying ${BACKUP_CP_CMD} -> ${PWD}/backups/${VERSION}/${WORLD_NAME}"
+    
+    MINIKUBE_BACKUPS=$(${MINIKUBE_CMD} ssh "find ${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME} -wholename \"${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME}/${WORLD_NAME}-*.tar.gz\"" | sort -rn)
+    echo "Found $(echo "${MINIKUBE_BACKUPS}" | wc -l) remote backups in ${MINIKUBE_VOLUMES_FOLDER}/backups/${WORLD_NAME}"
+    echo " v v v"
+    echo "${MINIKUBE_BACKUPS}"
+    echo " ^ ^ ^"
 
     while read BACKUP_FILE; do 
-      echo "Found ${BACKUP_FILE} remotely.."
-      FILENAME=$(basename ${BACKUP_FILE})
-      LOCAL_BACKUP_FILE="${CURR_FOLDER}/backups/${VERSION}/${WORLD_NAME}/${FILENAME}"
-      echo "Looking for ${FILENAME} locally"
+      BACKUP_FILE=${BACKUP_FILE//[$'\t\r\n']}
+      if [[ -z "${BACKUP_FILE}" ]]; then 
+        continue 
+      fi 
+      echo ""
+      echo "********************************"      
+      echo "Remote filepath: ${BACKUP_FILE}"
+    #   echo "$(echo -n ${BACKUP_FILE} | od -c)"
+      BACKUP_FILE_BASENAME=$(basename ${BACKUP_FILE})
+    #   echo "Base name: ${BACKUP_FILE_BASENAME}"
+      LOCAL_BACKUP_FILE="${PWD}/backups/${VERSION}/${WORLD_NAME}/${BACKUP_FILE_BASENAME}"
+      echo "Looking for local copy at ${LOCAL_BACKUP_FILE}"      
       if [[ -f ${LOCAL_BACKUP_FILE} ]]; then 
-        echo "${LOCAL_BACKUP_FILE}"
+        echo "Found ${LOCAL_BACKUP_FILE}"
       else
-        echo "Not found!"
-        docker cp minikube:${MINIKUBE_VOLUMES_FOLDER}/backup/${WORLD_NAME}/${FILENAME} ${CURR_FOLDER}/backups/${VERSION}/${WORLD_NAME}/
-        echo "${MINIKUBE_VOLUMES_FOLDER}/backup/${WORLD_NAME}/${FILENAME} --> ${CURR_FOLDER}/backups/${VERSION}/${WORLD_NAME}"
+        echo "Not found!"        
+        FULL_CP_CMD="${BACKUP_CP_CMD}/${BACKUP_FILE_BASENAME} backups/${VERSION}/${WORLD_NAME}/"
+        echo "${FULL_CP_CMD}"
+        ${FULL_CP_CMD}        
       fi
-    done < <(echo "${MINIKUBE_BACKUPS}")
+    done <<< ${MINIKUBE_BACKUPS}
 
 }
 
@@ -46,20 +62,28 @@ function crontab_log() {
     echo "${MSG}" | tee -a ${LOG_FILE}
 }
 
-if [[ -z "${TYPE}" || -z "${VERSION}" || -z "${BACKUP_CP_CMD}" ]]; then 
-    echo "TYPE, VERSION, and BACKUP_CP_CMD must be set"
+echo $@
+
+if [[ -z "${WORLD_NAME}" || -z "${VERSION}" || -z "${BACKUP_CP_CMD}" ]]; then 
+    echo "WORLD_NAME, VERSION, and BACKUP_CP_CMD must be set"
     exit 1
 fi 
 
-CURR_FOLDER=$(dirname $0)/../${TYPE}
+CURR_FOLDER=$(dirname $0)
 
-mkdir -p ${CURR_FOLDER}/log/${TYPE}/${VERSION}
+pushd ${CURR_FOLDER}
 
-MINIKUBE_VOLUMES_FOLDER=minecraft/${TYPE}/volumes-${VERSION}
+. common 
+. .env 
+
+MINIKUBE_VOLUMES_FOLDER=${VOLUME_BASE}-${VERSION}
 MINIKUBE_LOG_FOLDER=${MINIKUBE_VOLUMES_FOLDER}/log
-HOST_LOG_FOLDER=${CURR_FOLDER}/log/${TYPE}/${VERSION}
+HOST_LOG_FOLDER=log/${VERSION}
 LOG_FILE=${HOST_LOG_FOLDER}/crontab.log
 CRONTAB_LOCK_FILE=${HOST_LOG_FOLDER}/crontab.lock
+
+echo "Creating ${HOST_LOG_FOLDER}.."
+mkdir -vp ${HOST_LOG_FOLDER}
 
 crontab_log "||||||||||||||||||||||||||||||||||||||||||||||||||||"
 crontab_log "|||"
@@ -67,6 +91,7 @@ crontab_log "|||       crontab entrypoint "
 crontab_log "|||       $(date)"
 crontab_log "|||"
 crontab_log "|||       Type: ${TYPE}"
+crontab_log "|||       World name: ${WORLD_NAME}"
 crontab_log "|||       Version: ${VERSION}"
 crontab_log "|||       Host logs: ${HOST_LOG_FOLDER}"
 crontab_log "|||       Minikube logs: ${MINIKUBE_LOG_FOLDER}"
@@ -77,16 +102,35 @@ crontab_log "|||       Logging to ${LOG_FILE}"
 crontab_log "|||"
 crontab_log "|||"
 
-crontab_locked
-CRONTAB_LOCKED=$?
-backup_locked
-BACKUP_LOCKED=$?
+ATTEMPT_COUNT=0
 
 (
-    ([[ ${CRONTAB_LOCKED} -ne 0 ]] || [[ ${BACKUP_LOCKED} -ne 0 ]]) \
+    [[ ! $(crontab_locked) ]] \
         && (
-            (lock_crontab \
-                && copy_backups \
-                || echo "Something failed in backup") && unlock_crontab
-        ) || echo "something is locked (CRONTAB_LOCKED=${CRONTAB_LOCKED} BACKUP_LOCKED=${BACKUP_LOCKED})"
+            lock_crontab \
+            && echo "We just locked crontab, going to work now" \
+            && while [[ ${ATTEMPT_COUNT} -lt 5 ]]; do 
+                [[ ! $(backup_locked) ]] \
+                    && (
+                        echo "Backup isn't running, copying now" \
+                            && copy_backups \
+                            && echo "Copy succeeded" \
+                        || echo "Copy failed"                        
+                    ) && break \
+                    || (
+                        echo "Backup is running, we sleep now (ATTEMPT_COUNT=${ATTEMPT_COUNT})" \
+                            && ATTEMPT_COUNT=$(( ${ATTEMPT_COUNT} + 1 )) \
+                            && sleep 60
+                    )
+            done \
+            && unlock_crontab \
+            && echo "We just unlocked crontab, have a nice day!"
+        ) \
+        || (echo "Crontab is locked, someone else is already persistently trying to work, we go away now" && exit 1)
 ) | tee -a ${LOG_FILE} 2>&1
+
+crontab_log "|||"
+crontab_log "|||       completed "
+crontab_log "|||       $(date)"
+crontab_log "|||"
+crontab_log "||||||||||||||||||||||||||||||||||||||||||||||||||||"

@@ -29,7 +29,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
     continue 
   fi 
 
-  HASH=$(version_parameter sha)
+  HASH=$(version_parameter hash)
   TARGET_PLATFORM=$(version_parameter target_platform)
 
   echo "Building ${IMAGE}:${VERSION} from ${HASH} into ${TARGET_PLATFORM}"  
