@@ -276,12 +276,12 @@ function prune_backups() {
   prune_duplicates
 
   prune_log "Cleaning out pruned folder.."
-  rm -vf ${BACKUPS_WORLD_FOLDER}/pruned/*
+  [[ ${DRY_RUN} = 0 ]] && echo "Actually deleting pruned.." && rm -vf ${BACKUPS_WORLD_FOLDER}/pruned/*
 
   prune_expired
   
   prune_log "Cleaning out expired folder.."
-  rm -vf ${BACKUPS_WORLD_FOLDER}/expired/*
+  [[ ${DRY_RUN} = 0 ]] && echo "Actually deleting expired.." && rm -vf ${BACKUPS_WORLD_FOLDER}/expired/*
 
   popd 
   

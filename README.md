@@ -70,11 +70,13 @@ This script will:
 * create (and start) k8s resources to run the Minecraft server container
 * create a cronjob on your host to periodically copy any backup world archives from the minikube container to your host 
 
-### Migrating to another version 
+### Post-Deploy Maintenance Bits 
+
+#### Migrating to another version 
 
 If you have a world on version X, and then version Y is released, how do you deploy that X world onto a new Y server?
 
-#### The Java path
+##### The Java path
 
 * grab the server download URL
 * extract the hash, and create a new .jenv entry with envmanager
@@ -84,6 +86,36 @@ If you have a world on version X, and then version Y is released, how do you dep
 * restart launcher to pick up Y
 * fix the multiplayer server if you got a new port
 * restart proxy -> ./run.sh start
+
+#### Switching Worlds
+
+The simple way is 
+
+```
+./deploy up -v VERSION -w WORLD_NAME [-b PATH_TO_LAST_BACKUP]
+```
+
+where `PATH_TO_LAST_BACKUP` is only required if the restore point you want isn't the most recent file in `backups/VERSION/WORLD_NAME`.
+
+Otherwise, `PATH_TO_LAST_BACKUP` can point to literally any local file anywhere on disk.
+
+**CAUTION** Sometimes the last available backup file `deploy up` will use to restore from is corrupted. One possible way this can happen is the host-side cron copying the archive file before it is fully written in the container, although there are locks and checks in place to prevent this from happening, it still may happen. If you look in this folder and find the archive file size is pretty steady and slowly increasing, but every so often there's a file in the sequence that is noticeably smaller than the others.. those smallers ones are probably corrupted. If one of these corrupted files is the last file.. your restore won't go well.
+
+**The Fix (create a new backup and copy it off)**
+
+Note that we're skirting the "prune" process here.. but if the new backup happens to contain no new player information but the last backup (remember, that smaller file?) is corrupted but still passes prune's diff-check, the new backup will get deleted and you'll be left with a corrupted restore.
+
+```
+./mcshell shell -v VERSION
+. scripts/backup.sh
+backup
+ls backups/WORLD_NAME
+# --- check that your new backup is present and the file size looks good
+exit
+# --- wait until the cronjob goes off (*/15) or maybe run it manually
+ls backups/VERSION/WORLD_NAME
+# --- check that your new backup has been copied to the host and the file size looks good 
+```
 
 ### Monitor 
 
@@ -132,11 +164,15 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
   * use new file-at-a-time look/copy method to finish copying backups at deploy down 
   * extract backup pruning to work independently
   * use native backup pruning code on host-side backups
-  * on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand, making one last backup
+  * on deploy up when loading world or making any changes, do the same as 'deploy down' teardown procedure beforehand, making one last 
+  backup
+  * do a hash check, not just an existence check, when copying archives from the container
 * logging improvements:
   * logrotate on backup/cron logs in server container + on host 
   * persist server logs outside individual deployments 
   * maybe volume in the log folder so we don't need to shell into the server container, cron copy from minikube?
+* cannot deploy from a singleplayer folder with spaces in the path 
+* when host cron looks for backups in the container on a new world, if no backup has ever run and the folder is empty, it will pick up the "find ... : No such file or directory" error statement as a line count of 1 == one backup.. either 2>/dev/null that or something 
 * deploying 1.19.4 reported the 25565-mapped port for 1.19.3 (also happened to be running)
 * when looking for a world backup for deploy up, go into minikube container to make sure there aren't more recent versions 
 * disallow reusing a world name when restoring any non-latest backup (grep backup timestamp and use as suffix?)

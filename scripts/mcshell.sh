@@ -34,7 +34,7 @@ done
 TARGET_PLATFORM=$(version_parameter target_platform)
 
 case ${TARGET_PLATFORM} in 
-  minikube)   MATCH="k8s_${IMAGE}_${IMAGE}-${VERSION}"
+  minikube)   MATCH="k8s_${IMAGE}_${IMAGE}-${VERSION}-[a-f0-9]{9,10}-[a-z0-9]{5}_"
               . ../scripts/minikube-env.sh
               ;;
   docker)     MATCH="${IMAGE}-${VERSION}"

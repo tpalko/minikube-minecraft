@@ -20,7 +20,7 @@ INTERACTIVE=${INTERACTIVE:=0}
 
 function find_host_for_version() {
     
-  HOST_CONTAINER_FILTER="POD_${IMAGE}-${VERSION}"
+  HOST_CONTAINER_FILTER="^k8s_POD_${IMAGE}-${VERSION}-[a-f0-9]{9,10}-[a-z0-9]{5}_"
   DOCKER_CONTAINER_ID=$(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q)
 
   if [[ -z "${DOCKER_CONTAINER_ID}" ]]; then 

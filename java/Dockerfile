@@ -14,6 +14,11 @@ ENV HASH=${HASH}
 
 RUN wget https://launcher.mojang.com/v1/objects/${HASH}/server.jar
 
+## -- DEPRECATED: please see java/envmanager + java/.jenv
+# -- 1.20
+#RUN wget https://piston-data.mojang.com/v1/objects/15c777e2cfe0556eef19aab534b186c0c6f277e1/server.jar
+# -- 1.20-pre-release-1
+#RUN wget https://piston-data.mojang.com/v1/objects/95ac4bf3d2f4ae57687493f5232d3f58334b85d2/server.jar
 # -- 1.19.4
 #RUN wget https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar
 # -- 1.19.3
