@@ -3,7 +3,7 @@ FROM debian:latest
 RUN apt-get -y update \
   && apt-get -y upgrade \
   && apt-get -y install \
-    netcat \
+    netcat-traditional \
     gettext-base \
     iputils-ping \
     nginx-full \

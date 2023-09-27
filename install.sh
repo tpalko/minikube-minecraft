@@ -2,7 +2,7 @@
 
 ACTION=$1
 
-for SCRIPT in envmanager.py common.sh cron.sh build.sh deploy.sh mcshell.sh run.sh load.sh; do 
+for SCRIPT in status.sh envmanager.py common.sh cron.sh build.sh deploy.sh mcshell.sh run.sh load.sh; do 
   STRIPPED_SCRIPT_FILE=${SCRIPT%%.sh}
   STRIPPED_SCRIPT_FILE=${STRIPPED_SCRIPT_FILE%%.py}  
   for DEPLOY in java bedrock; do

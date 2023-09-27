@@ -160,6 +160,8 @@ Now, you can add a multiplayer server at `<your hostname>:<incremented port>`
 
 #### backlog 
 
+see why latest p8s backup 2023-04-04-19-14 copied to host but isn't on the container
+
 * backup improvements:
   * use new file-at-a-time look/copy method to finish copying backups at deploy down 
   * extract backup pruning to work independently
@@ -223,7 +225,7 @@ host (192.168.1.2)
           - minecraft-server container (172.17.0.4)
 ```
 
-_The minecraft-proxy container and the route table entry are not necessary if you only want to play on the machine that's hosting minikube. In that case, minikube is already exposing aforwarded port to the NodePort service cluster IP, and that forwarded port is available to the host because minikube is on a bridge network. But it's not available anywhere else, because only the host has a route table entry for its docker bridge networks._
+_The minecraft-proxy container and the route table entry are not necessary if you only want to play on the machine that's hosting minikube. In that case, minikube is already exposing a forwarded port to the NodePort service cluster IP, and that forwarded port is available to the host because minikube is on a bridge network. But it's not available anywhere else, because only the host has a route table entry for its docker bridge networks._
 
 For Minecraft to be exposed on the network, the minikube host machine must 
 serve a port that is redirected to minikube itself. That is the job of the 

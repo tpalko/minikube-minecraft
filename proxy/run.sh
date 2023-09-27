@@ -151,7 +151,7 @@ function remove_container() {
 }
 
 function build_image() {
-  DOCKER_BUILD_CMD="docker build -t minecraft-proxy:latest ."  
+  DOCKER_BUILD_CMD="docker build --network ${NETWORK} -t minecraft-proxy:latest ."  
   echo "Building new image.."
   ${DOCKER_BUILD_CMD}
 }

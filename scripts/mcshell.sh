@@ -31,6 +31,11 @@ while [[ $# -gt 0 ]]; do
   esac 
 done 
 
+if [[ -z "${VERSION}" ]]; then 
+  usage 
+  exit 1
+fi 
+
 TARGET_PLATFORM=$(version_parameter target_platform)
 
 case ${TARGET_PLATFORM} in 

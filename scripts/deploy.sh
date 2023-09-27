@@ -42,6 +42,8 @@ export SPEC_BACKUP_FILE
 
 FORCE_WORLD_DATA_WRITE=0
 LEVELNAME_FILE=levelname.txt
+CONTAINER_USER_ID=996
+CONTAINER_GROUP_ID=996
 
 ###########################################
 #
@@ -197,7 +199,7 @@ function load() {
   echo "remove local work folder ${WORK_FOLDER}"
   rm -rf ${WORK_FOLDER}
   
-  target_platform_cmd "sudo chown -R 999:999 ${VERSIONED_WORLD_PATH}"
+  target_platform_cmd "sudo chown -R ${CONTAINER_USER_ID}:${CONTAINER_GROUP_ID} ${VERSIONED_WORLD_PATH}"
   echo "${BACKUP_FILE} is loaded into (${TARGET_PLATFORM}) ${VERSIONED_WORLD_PATH}"
 
   ./envmanager update -v ${VERSION} -w "${WORLD_NAME}"
@@ -259,7 +261,7 @@ function up() {
   for VOLUME in world backups log; do 
     echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
     target_platform_cmd "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
-    target_platform_cmd "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    target_platform_cmd "sudo chown -R ${CONTAINER_USER_ID}:${CONTAINER_GROUP_ID} ${VERSIONED_VOLUME_BASE}/${VOLUME}"
   done 
 
   PATH_TO_LEVELNAME_FILE="${VERSIONED_VOLUME_BASE}/world/${LEVELNAME_FILE}"
@@ -275,7 +277,7 @@ function up() {
     # for VOLUME in world backups; do 
     #   echo "Making ${VERSIONED_VOLUME_BASE}/${VOLUME}"
     #   minikube ssh "mkdir -p ${VERSIONED_VOLUME_BASE}/${VOLUME}"
-    #   minikube ssh "sudo chown -R 999:999 ${VERSIONED_VOLUME_BASE}/${VOLUME}"
+    #   minikube ssh "sudo chown -R ${CONTAINER_USER_ID}:${CONTAINER_GROUP_ID} ${VERSIONED_VOLUME_BASE}/${VOLUME}"
     # done 
 
     echo "Creating volumes.."
@@ -481,10 +483,10 @@ function down() {
 
 
   
-  echo "Copying the last of the backups:"
+  echo "WARNING - COMMENTED / Copying the last of the backups:"
   echo "${BACKUP_CP_CMD} --> ${PWD}/backups/${VERSION}"
 
-  ${BACKUP_CP_CMD} ${PWD}/backups/${VERSION}/ || echo "Last backup copy failed"
+  # ${BACKUP_CP_CMD} ${PWD}/backups/${VERSION}/ || echo "Last backup copy failed"
   # docker cp "minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}" "${PWD}/backups/${VERSION}/" || echo "Last backup copy failed"
 }
 
