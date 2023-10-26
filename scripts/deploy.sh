@@ -78,10 +78,10 @@ done
 #
 
 if [[ -n "${SPEC_BACKUP_FILE}" && -z "${SPEC_WORLD_NAME}" ]]; then 
-  echo "If a backup file is provided, a world name must be specified."
+  echo "If a backup file is provided, a world name must be specified - the world has a name, we're not going to guess what it is or root around the data looking for it."
   echo "This should be a distinct name or this world's true name, so subsequent backups of this world do not conflate with backups of another world"
-  echo "CAUTION: if specifying an older backup, subsequent backups will create a historical branch"
-  echo "In which case it would make sense to provide an appropriate name, e.g. myworld-alternate-from-<timestamp>"
+  echo "CAUTION: if specifying a backup in the middle of a world's history, subsequent backups of it after deployment will create a historical branch"
+  echo "In which case it would make sense to provide an appropriate alternative name, e.g. myworld-alternate-from-<timestamp>"
   exit 1
 fi 
 
@@ -357,6 +357,8 @@ function up() {
     target_platform_cmd "sudo touch ${PATH_TO_LEVELNAME_FILE}"
     echo "Permissioning ${PATH_TO_LEVELNAME_FILE}"
     target_platform_cmd "sudo chmod 664 ${PATH_TO_LEVELNAME_FILE}"
+    #echo "Owning ${PATH_TO_LEVELNAME_FILE}"
+    #target_platform_cmd "sudo chown ${CONTAINER_USER_ID}:${CONTAINER_GROUP_ID} ${PATH_TO_LEVELNAME_FILE}"
     echo "Writing level name to ${PATH_TO_LEVELNAME_FILE}"
     target_platform_cmd "echo -n ${WORLD_NAME_TO_WRITE} > ${PATH_TO_LEVELNAME_FILE}"
   else 

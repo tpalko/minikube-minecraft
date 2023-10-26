@@ -19,27 +19,35 @@ DEAD_CONTAINER=$(docker ps -qa --filter="name=${NAME}")
 INTERACTIVE=${INTERACTIVE:=0}
 
 function find_host_for_version() {
-    
-  HOST_CONTAINER_FILTER="^k8s_POD_${IMAGE}-${VERSION}-[a-f0-9]{9,10}-[a-z0-9]{5}_"
-  DOCKER_CONTAINER_ID=$(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q)
 
-  if [[ -z "${DOCKER_CONTAINER_ID}" ]]; then 
-    echo "No running container found for ${HOST_CONTAINER_FILTER}"
-    return 1 
+  POD_NAME=$(kubectl get pod -o name | grep ${IMAGE}-${VERSION})
+  if [[ -n "${POD_NAME}" ]]; then 
+    NEW_HOST=$(kubectl get ${POD_NAME} -o json | jq -r ".status.podIP")
   fi 
 
-  NEW_HOST=$(docker inspect $(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
+  #HOST_CONTAINER_FILTER="^k8s_POD_${IMAGE}-${VERSION}-[a-f0-9]{9,10}-[a-z0-9]{5}_"
+  #DOCKER_CONTAINER_ID=$(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q)
+
+  #if [[ -z "${DOCKER_CONTAINER_ID}" ]]; then 
+  #  echo "No running container found for ${HOST_CONTAINER_FILTER}"
+  #  #docker ps
+  #  return 1 
+  #else
+  #  echo "Running container: ${HOST_CONTAINER_FILTER}"
+  #fi 
+
+  #NEW_HOST=$(docker inspect $(docker ps --filter="name=${HOST_CONTAINER_FILTER}" -q) | jq -r ".[] | .NetworkSettings | .Networks | .bridge | .IPAddress")
   
   if [[ -z "${NEW_HOST}" || "${NEW_HOST}" = "null" ]]; then 
     echo "No IP address found for ${HOST_CONTAINER_FILTER}. Skipping ${VERSION}."
-    return 1
+    return 2
   fi 
 
   VERSION_HOST_ARRAY=(${NEW_HOST})
 
   if [[ ${#VERSION_HOST_ARRAY[@]} -gt 1 ]]; then 
     echo "Multiple IP addresses found for ${HOST_CONTAINER_FILTER} (${VERSION_HOST_ARRAY[@]}). Skipping ${VERSION}."
-    return 1
+    return 2
   fi 
 
   echo ${NEW_HOST}
@@ -62,14 +70,24 @@ function scrape_hosts() {
 
     echo "Looking for ${TYPE} version ${VERSION} host pod.."  
     NEW_HOST=$(find_host_for_version)
+    RES=$?
 
-    if [[ $? -eq 0 && -n "${NEW_HOST}" ]]; then 
+    if [[ ${RES} -eq 0 && -n "${NEW_HOST}" ]]; then 
       echo "Found ${NEW_HOST} for ${VERSION}"
+    #elif [[ ${RES} -eq 2 ]]; then 
+      #echo "host search resulted in \"${NEW_HOST}\", subbing in minikube as host"
+      #NEW_HOST=10.244.0.3
+    else
+      echo "host search failed (${RES}) - no containers"
+      continue
+    fi 
+
+    if [[ -n "${NEW_HOST}" ]]; then 
       eval "${HOSTS_ARRAY}+=(${NEW_HOST})"
       eval "${VERSION_HOST_PAIRS_ARRAY}+=(${VERSION}=${NEW_HOST})"
-    else 
-      echo "${NEW_HOST}"
+      NEW_HOST=
     fi 
+
   done 
 
   popd 
