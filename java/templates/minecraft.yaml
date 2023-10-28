@@ -1,34 +1,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ${IMAGE}-${VERSION}
+  name: ${IMAGE}-${VERSION}-${WORLD_NAME}
 spec:
   selector:
     matchLabels:
-      app: ${IMAGE}-${VERSION}
+      app: ${IMAGE}-${VERSION}-${WORLD_NAME}
   replicas: 1
   template:
     metadata:
       labels:
-        app: ${IMAGE}-${VERSION}
+        app: ${IMAGE}-${VERSION}-${WORLD_NAME}
     spec:
       volumes:
       - name: log
         persistentVolumeClaim:
-          claimName: minecraft-${TYPE}-log-${VERSION}
+          claimName: minecraft-${TYPE}-log-${VERSION}-${WORLD_NAME}
       - name: backups 
         persistentVolumeClaim:
-          claimName: minecraft-${TYPE}-backups-${VERSION}
+          claimName: minecraft-${TYPE}-backups-${VERSION}-${WORLD_NAME}
       - name: world 
         persistentVolumeClaim:
-          claimName: minecraft-${TYPE}-world-${VERSION}
+          claimName: minecraft-${TYPE}-world-${VERSION}-${WORLD_NAME}
       containers:
       - name: ${IMAGE}
         image: ${IMAGE}:${VERSION}
         imagePullPolicy: Never        
         envFrom:
         - configMapRef:
-            name: ${IMAGE}-${VERSION}
+            name: ${IMAGE}-${VERSION}-${WORLD_NAME}
         volumeMounts:
         - mountPath: /opt/minecraft/log
           name: log
@@ -45,7 +45,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ${IMAGE}-service-${VERSION_HYPHEN}
+  name: ${IMAGE}-service-${VERSION_HYPHEN}-${WORLD_NAME}
   # labels:
   #   kubernetes.io/minikube-addons-endpoint: ingress
 spec:
@@ -58,4 +58,4 @@ spec:
       port: 25575
       targetPort: mcrcon
   selector:
-    app: ${IMAGE}-${VERSION}
+    app: ${IMAGE}-${VERSION}-${WORLD_NAME}

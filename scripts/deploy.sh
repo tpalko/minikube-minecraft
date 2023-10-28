@@ -541,7 +541,7 @@ for VERSION in ${VERSION_ARRAY[@]}; do
     VOLUME_BASE=${PWD}/live/volumes    
   fi 
 
-  export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${VERSION}
+  export VERSIONED_VOLUME_BASE=${VOLUME_BASE}-${WORLD_NAME}-${VERSION}
 
   if [[ "${TARGET_PLATFORM}" = "minikube" ]]; then 
     export BACKUP_CP_CMD="docker cp minikube:${VERSIONED_VOLUME_BASE}/backups/${WORLD_NAME}"

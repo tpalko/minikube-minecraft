@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolume 
 metadata:
-  name: minecraft-${TYPE}-log-pv-${VERSION}
+  name: minecraft-${TYPE}-log-pv-${VERSION}-${WORLD_NAME}
 spec:
   capacity: 
     storage: 10Gi
@@ -11,7 +11,7 @@ spec:
   persistentVolumeReclaimPolicy: Delete 
   storageClassName: standard 
   local:
-    path: ${VOLUME_BASE}-${VERSION}/log
+    path: ${VOLUME_BASE}-${VERSION}/${WORLD_NAME}/log
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -24,7 +24,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolume 
 metadata:
-  name: minecraft-${TYPE}-backups-pv-${VERSION}
+  name: minecraft-${TYPE}-backups-pv-${VERSION}-${WORLD_NAME}
 spec:
   capacity: 
     storage: 10Gi
@@ -34,7 +34,7 @@ spec:
   persistentVolumeReclaimPolicy: Delete 
   storageClassName: standard 
   local:
-    path: ${VOLUME_BASE}-${VERSION}/backups
+    path: ${VOLUME_BASE}-${VERSION}/${WORLD_NAME}/backups
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -47,7 +47,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolume 
 metadata:
-  name: minecraft-${TYPE}-world-pv-${VERSION}
+  name: minecraft-${TYPE}-world-pv-${VERSION}-${WORLD_NAME}
 spec:
   capacity: 
     storage: 10Gi
@@ -57,7 +57,7 @@ spec:
   persistentVolumeReclaimPolicy: Delete 
   storageClassName: standard 
   local:
-    path: ${VOLUME_BASE}-${VERSION}/world
+    path: ${VOLUME_BASE}-${VERSION}/${WORLD_NAME}/world
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -70,9 +70,9 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim 
 metadata:
-  name: minecraft-${TYPE}-log-${VERSION}
+  name: minecraft-${TYPE}-log-${VERSION}-${WORLD_NAME}
 spec:
-  volumeName: minecraft-${TYPE}-log-pv-${VERSION}
+  volumeName: minecraft-${TYPE}-log-pv-${VERSION}-${WORLD_NAME}
   accessModes: 
     - ReadWriteOnce
   resources:
@@ -82,9 +82,9 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim 
 metadata:
-  name: minecraft-${TYPE}-backups-${VERSION}
+  name: minecraft-${TYPE}-backups-${VERSION}-${WORLD_NAME}
 spec:
-  volumeName: minecraft-${TYPE}-backups-pv-${VERSION}
+  volumeName: minecraft-${TYPE}-backups-pv-${VERSION}-${WORLD_NAME}
   accessModes: 
     - ReadWriteOnce
   resources:
@@ -94,9 +94,9 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim 
 metadata:
-  name: minecraft-${TYPE}-world-${VERSION}
+  name: minecraft-${TYPE}-world-${VERSION}-${WORLD_NAME}
 spec:
-  volumeName: minecraft-${TYPE}-world-pv-${VERSION}
+  volumeName: minecraft-${TYPE}-world-pv-${VERSION}-${WORLD_NAME}
   accessModes: 
     - ReadWriteOnce
   resources:

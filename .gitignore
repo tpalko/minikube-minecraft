@@ -13,4 +13,5 @@ run
 common
 envmanager
 log
-
+status
+cron
